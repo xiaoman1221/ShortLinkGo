@@ -1,0 +1,149 @@
+# 自动发布工作流
+#
+# 触发条件：push 到 master/main 且 commit message 中包含 vX.Y.Z 格式的版本号
+# （例：`feat: release v1.2.3`）。仅提交不含版本号时，后续构建任务自动跳过。
+#
+# 产出：
+#   1. Docker 镜像推送到 Docker Hub，tag：latest + vX.Y.Z（多架构 amd64/arm64）
+#   2. 五个主流平台二进制（含 web/dist 与 docs，解压即用），发布到 GitHub Release
+#
+# 需要在仓库 Settings → Secrets → Actions 中配置：
+#   DOCKERHUB_USERNAME  Docker Hub 用户名
+#   DOCKERHUB_TOKEN     Docker Hub Access Token（Hub → Account Settings → Security）
+name: Release
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # 创建 GitHub Release 与 tag
+
+jobs:
+  # ---------- 版本号提取：commit message 中的 vX.Y.Z ----------
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from commit message
+        id: extract
+        run: |
+          VERSION=$(git log -1 --pretty=%s | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit message version: ${VERSION:-none}"
+
+  # ---------- Docker 镜像 → Docker Hub ----------
+  docker:
+    runs-on: ubuntu-latest
+    needs: version
+    if: needs.version.outputs.version != ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/shortlinkgo
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.version.outputs.version }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------- 多平台二进制 ----------
+  binaries:
+    runs-on: ubuntu-latest
+    needs: version
+    if: needs.version.outputs.version != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 } # macOS (Intel)
+          - { goos: darwin, goarch: arm64 } # macOS (Apple Silicon)
+          - { goos: windows, goarch: amd64, ext: .exe }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web dist
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          go build -trimpath -ldflags "-s -w" \
+            -o "pkg/shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" \
+            ./server
+
+      - name: Package (binary + web/dist + docs)
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          NAME="shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p "pkg/$NAME/web"
+          mv "pkg/shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" "pkg/$NAME/"
+          cp -r web/dist "pkg/$NAME/web/dist"
+          cp -r docs "pkg/$NAME/docs"
+          cp .env.example README.md "pkg/$NAME/"
+          cd pkg && zip -qr "$NAME.zip" "$NAME"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: pkg/*.zip
+          retention-days: 3
+
+  # ---------- GitHub Release ----------
+  release:
+    runs-on: ubuntu-latest
+    needs: [version, binaries]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: pkg
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.version }}
+          name: Release ${{ needs.version.outputs.version }}
+          files: pkg/*.zip
