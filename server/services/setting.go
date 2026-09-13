@@ -38,10 +38,11 @@ var allowedSettingKeys = map[string]bool{
 
 // GeoIPAPIProviders 公共 IP 查询提供商（网页可切换）。
 var GeoIPAPIProviders = map[string]bool{
-	"ip-api":  true, // 免费无 key，批量查询，免费版仅 http
-	"ipinfo":  true, // https，无 key 有限额
-	"ipwhois": true, // https 免费无 key
-	"custom":  true, // 自定义 URL 模板（{ip} 占位，ip-api 兼容响应格式）
+	"pconline": true, // 太平洋电脑网，国内老牌，中文，免费无 key（默认）
+	"ip-api":   true, // 免费无 key，批量查询，免费版仅 http
+	"ipwhois":  true, // https 免费无 key
+	"ipinfo":   true, // https，无 key 有限额
+	"custom":   true, // 自定义 URL 模板（{ip} 占位，ip-api 兼容响应格式）
 }
 
 // ClientIPModes 真实 IP 识别模式（网页可切换）。
@@ -100,7 +101,7 @@ func (s *SettingService) Set(key, value string) error {
 	}
 	if key == "geoip_api_provider" {
 		if !GeoIPAPIProviders[value] {
-			return errors.New("无效的提供商，可选 ip-api/ipinfo/ipwhois/custom")
+			return errors.New("无效的提供商，可选 pconline/ip-api/ipwhois/ipinfo/custom")
 		}
 	}
 	if key == "geoip_api_url" && strings.TrimSpace(value) != "" {

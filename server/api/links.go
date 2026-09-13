@@ -302,6 +302,22 @@ func (h *LinkHandler) Top(c *gin.Context) {
 	utils.OK(c, vos)
 }
 
+// TopIPs GET /api/stats/top-ips?limit=5 访问最多的访客 IP
+func (h *LinkHandler) TopIPs(c *gin.Context) {
+	uid, ok := userID(c)
+	if !ok {
+		utils.Unauthorized(c, "未登录")
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "5"))
+	list, err := h.Svc.TopIPs(uid, roleOf(c), limit)
+	if err != nil {
+		utils.ServerError(c, err.Error())
+		return
+	}
+	utils.OK(c, list)
+}
+
 // Geo GET /api/stats/geo?days=30&scope=world|china 访问者地理分布
 func (h *LinkHandler) Geo(c *gin.Context) {
 	uid, ok := userID(c)

@@ -211,7 +211,9 @@
           <label class="field">
             <span>查询提供商</span>
             <select v-model="bfForm.geoip_api_provider" class="select" style="height: 38px">
-              <option value="ip-api">ip-api.com — 免费无 key，批量查询（默认）</option>
+              <option value="pconline">太平洋电脑网 — 国内老牌，中文，免费无 key（默认）</option>
+              <option value="ip-api">ip-api.com — 免费无 key，批量查询，国内可直连</option>
+              <option value="baidu">百度开放数据 — 国内可达，中文归属地</option>
               <option value="ipwhois">ipwho.is — https 加密，免费无 key</option>
               <option value="ipinfo">ipinfo.io — https，无 key 有限额，可填 token</option>
               <option value="custom">自定义 — ip-api 兼容格式，地址含 {ip} 占位</option>
@@ -336,7 +338,7 @@ const ipForm = reactive({ client_ip_mode: 'smart', client_ip_trusted_proxies: ''
 const savingIP = ref(false)
 
 /* geoip api fallback */
-const bfForm = reactive({ geoip_api_enabled: false, geoip_api_provider: 'ip-api', geoip_api_key: '', geoip_api_url: '' })
+const bfForm = reactive({ geoip_api_enabled: false, geoip_api_provider: 'pconline', geoip_api_key: '', geoip_api_url: '' })
 const bfKeySet = ref(false)
 const savingBF = ref(false)
 
@@ -407,7 +409,7 @@ async function loadSettings() {
     ipForm.client_ip_mode = res.data.client_ip_mode || 'smart'
     ipForm.client_ip_trusted_proxies = res.data.client_ip_trusted_proxies || ''
     bfForm.geoip_api_enabled = res.data.geoip_api_enabled === '1'
-    bfForm.geoip_api_provider = res.data.geoip_api_provider || 'ip-api'
+    bfForm.geoip_api_provider = res.data.geoip_api_provider || 'pconline'
     bfForm.geoip_api_key = ''
     bfForm.geoip_api_url = res.data.geoip_api_url || ''
     bfKeySet.value = res.data.geoip_api_key_set === '1'

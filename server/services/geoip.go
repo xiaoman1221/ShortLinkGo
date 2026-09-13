@@ -4,6 +4,7 @@ package services
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -37,12 +38,52 @@ import (
 type geoIPSource struct {
 	Name    string
 	URL     string
-	NeedKey bool // 需要 MaxMind License Key
+	Type    string // ""=直链文件；"npmmirror"=npmmirror 最新版 tarball（两步：latest JSON → tarball）
+	NeedKey bool   // 需要 MaxMind License Key
 }
 
-// geoIPSources 内置候选源列表（按优先级排序）。
+// npmmirrorTarballURL 从 registry.npmmirror.com 的 latest JSON 解析最新 tarball 直链。
+func npmmirrorTarballURL(latestURL string) (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, latestURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "ShortLinkGo-GeoIP-Updater")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	var meta struct {
+		Dist struct {
+			Tarball string `json:"tarball"`
+		} `json:"dist"`
+	}
+	if err := json.Unmarshal(body, &meta); err != nil {
+		return "", fmt.Errorf("latest 元数据非 JSON")
+	}
+	if meta.Dist.Tarball == "" {
+		return "", errors.New("latest 元数据缺少 tarball")
+	}
+	return meta.Dist.Tarball, nil
+}
+
+// geoIPSources 内置候选源列表（按国内可达性优先排序）。
 var geoIPSources = []geoIPSource{
-	// 社区自动构建的 GeoLite2-City.mmdb（每日更新，直接提供 .mmdb 文件，无需注册）
+	// npmmirror（阿里云国内 CDN）分发的 @geo-mmd/geolite2-city：标准 GeoLite2-City
+	// 库（约 60MB，geoip2 完全兼容，weekly 更新），tgz 压缩包自动解包。
+	// 下载时先从 latest 元数据解析当日 tarball 直链（两步）
+	{Name: "npmmirror 镜像", URL: "https://registry.npmmirror.com/@geo-mmd/geolite2-city/latest", Type: "npmmirror"},
+	// 社区自动构建的 GeoLite2-City.mmdb（IPv4+IPv6 合并，每日构建；GitHub 直连，
+	// 国内不稳定时自动回退下一源）
 	{Name: "社区镜像", URL: "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-City.mmdb"},
 	// MaxMind 官方（需 License Key，{key} 会被替换；返回 tar.gz 压缩包）
 	{Name: "MaxMind 官方", URL: "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={key}&suffix=tar.gz", NeedKey: true},
@@ -249,6 +290,15 @@ func downloadGeoDB(db *gorm.DB, all map[string]string, sourceName, dlURL string)
 	target := utils.GeoDBPath
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return false, err
+	}
+
+	// npmmirror 源：先从 latest 元数据解析当日 tarball 直链（手拼版本号不可靠）
+	if strings.Contains(sourceName, "npmmirror") {
+		tar, err := npmmirrorTarballURL(dlURL)
+		if err != nil {
+			return false, fmt.Errorf("解析 npmmirror 最新版本失败: %v", err)
+		}
+		dlURL = tar
 	}
 
 	client := &http.Client{

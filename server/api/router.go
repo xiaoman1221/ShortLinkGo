@@ -91,6 +91,7 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 			stats.GET("/summary", linkH.Summary)
 			stats.GET("/trend", linkH.Trend)
 			stats.GET("/top", linkH.Top)
+			stats.GET("/top-ips", linkH.TopIPs)
 			stats.GET("/geo", linkH.Geo)
 		}
 		tokens := apiGroup.Group("/tokens")

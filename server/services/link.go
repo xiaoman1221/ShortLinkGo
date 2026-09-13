@@ -398,6 +398,36 @@ var chinaCountryNames = []string{
 	"澳门", "中国澳门", "澳门特别行政区",
 }
 
+// TopIPs 返回访问次数最多的访客 IP（含国家）。
+func (s *LinkService) TopIPs(userID uint, role string, limit int) ([]map[string]interface{}, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 5
+	}
+	q := `SELECT ip, COALESCE(NULLIF(country,''), '未知') AS country, COUNT(*) AS cnt
+		FROM visit_logs WHERE 1=1`
+	args := []interface{}{}
+	if !IsStaff(role) {
+		q += ` AND link_id IN (SELECT id FROM links WHERE user_id = ?)`
+		args = append(args, userID)
+	}
+	q += ` GROUP BY ip ORDER BY cnt DESC LIMIT ?`
+	args = append(args, limit)
+	type row struct {
+		IP      string
+		Country string
+		Cnt     int64
+	}
+	var rows []row
+	if err := s.DB.Raw(q, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]map[string]interface{}, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, map[string]interface{}{"ip": r.IP, "country": r.Country, "count": r.Cnt})
+	}
+	return out, nil
+}
+
 // GeoDistribution 返回访问者地理分布（用于访问地图）。
 // scope=world（默认）按国家聚合；scope=china 过滤中国及港澳台，按省级行政区聚合。
 func (s *LinkService) GeoDistribution(userID uint, role string, days int, scope string) ([]GeoStat, error) {

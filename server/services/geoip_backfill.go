@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
+
 	"strings"
 	"sync"
 	"time"
@@ -138,7 +141,7 @@ func runGeoIPBackfill(db *gorm.DB) {
 	}
 	provider := all["geoip_api_provider"]
 	if !GeoIPAPIProviders[provider] {
-		provider = "ip-api"
+		provider = "pconline"
 	}
 	key := strings.TrimSpace(all["geoip_api_key"])
 	tpl := strings.TrimSpace(all["geoip_api_url"])
@@ -283,6 +286,10 @@ var geoHTTPClient = &http.Client{
 // queryGeoIPAPI 单条查询，按提供商分发。
 func queryGeoIPAPI(provider, key, tpl, ip string) (*geoAPIResult, error) {
 	switch provider {
+	case "pconline":
+		return queryPConline(ip)
+	case "baidu":
+		return queryBaidu(ip)
 	case "ipinfo":
 		return queryIPInfo(ip, key)
 	case "ipwhois":
@@ -450,6 +457,86 @@ func queryIPWhoIs(ip string) (*geoAPIResult, error) {
 		Country: str(m, "country"), Region: str(m, "region"), City: str(m, "city"),
 		Lat: num(m, "latitude"), Lon: num(m, "longitude"),
 	}, nil
+}
+
+// queryPConline 太平洋电脑网 ipJson 接口（国内老牌，免费无 key，GBK 编码）。
+// 国外 IP 返回 addr=国家；国内 IP 返回 pro/city=省市级、addr=省市+运营商。
+func queryPConline(ip string) (*geoAPIResult, error) {
+	u := "https://whois.pconline.com.cn/ipJson.jsp?ip=" + url.PathEscape(ip) + "&json=true"
+	if err := validateDownloadURL(u); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "ShortLinkGo-GeoIP")
+	resp, err := geoHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	// 响应为 GBK 编码（前有若干空行），转 UTF-8 后提取 JSON
+	decoded, err := simplifiedchinese.GBK.NewDecoder().Bytes(body)
+	if err != nil {
+		return nil, fmt.Errorf("GBK 解码失败: %v", err)
+	}
+	start := strings.Index(string(decoded), "{")
+	if start < 0 {
+		return nil, errors.New("响应不含 JSON")
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(string(decoded)[start:]), &m); err != nil {
+		return nil, fmt.Errorf("响应非 JSON")
+	}
+	addr := strings.TrimSpace(str(m, "addr"))
+	pro := strings.TrimSpace(str(m, "pro"))
+	city := strings.TrimSpace(str(m, "city"))
+	if addr == "" {
+		return nil, errors.New("无归属地信息")
+	}
+	// 国内地址形如「北京市 」「广东省深圳市 电信」，拆为国家/省/市
+	if pro != "" || strings.Contains(addr, "省") || strings.Contains(addr, "市") {
+		country := "中国"
+		if pro == "" {
+			pro = strings.TrimSpace(addr)
+		}
+		return &geoAPIResult{Country: country, Region: pro, City: city}, nil
+	}
+	return &geoAPIResult{Country: addr}, nil
+}
+
+// queryBaidu 百度开放数据 IP 查询（国内可达，location 为中文混合描述）。
+func queryBaidu(ip string) (*geoAPIResult, error) {
+	m, err := fetchJSON("https://opendata.baidu.com/api.php?query=" + url.PathEscape(ip) + "&resource_id=6006&oe=utf8")
+	if err != nil {
+		return nil, err
+	}
+	arr, ok := m["data"].([]interface{})
+	if !ok || len(arr) == 0 {
+		return nil, errors.New("无数据")
+	}
+	first, _ := arr[0].(map[string]interface{})
+	loc := str(first, "location")
+	if loc == "" {
+		return nil, errors.New("无归属地信息")
+	}
+	// location 形如「美国」「北京市北京市 运营商」：含省/市视为国内，剩余为国家
+	cleaned := strings.TrimSpace(loc)
+	for _, suffix := range []string{"CNNIC", "电信", "联通", "移动", "铁通", "鹏博士", "教育网"} {
+		cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, suffix))
+	}
+	if strings.Contains(cleaned, "省") || strings.Contains(cleaned, "市") {
+		return &geoAPIResult{Country: "中国", Region: cleaned}, nil
+	}
+	return &geoAPIResult{Country: cleaned}, nil
 }
 
 // queryCustom 自定义 URL 模板（{ip} 占位），宽松解析常见字段名（ip-api 兼容格式）。

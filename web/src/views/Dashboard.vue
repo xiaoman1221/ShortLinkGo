@@ -104,6 +104,27 @@
           </ol>
           <div v-else class="empty-mini"><p>暂无访问数据。</p></div>
         </section>
+
+        <section class="panel">
+          <div class="section-head tight">
+            <div>
+              <p class="eyebrow">访客 · Top IP</p>
+              <h3>访问最多的 IP</h3>
+            </div>
+          </div>
+          <p v-if="loading" class="state-note">加载中…</p>
+          <ol v-else-if="topIPs.length" class="top-list">
+            <li v-for="(t, i) in topIPs" :key="t.ip" class="top-row">
+              <span class="top-rank num">{{ String(i + 1).padStart(2, '0') }}</span>
+              <div class="top-main">
+                <span class="top-code">{{ t.ip }}</span>
+                <span class="top-url">{{ t.country }}</span>
+              </div>
+              <span class="top-visits num">{{ t.count }} 次</span>
+            </li>
+          </ol>
+          <div v-else class="empty-mini"><p>暂无访问数据。</p></div>
+        </section>
       </aside>
     </div>
   </div>
@@ -118,6 +139,7 @@ import { countryToISO, provinceKey, provinceCenter } from '../utils/geoNames'
 const summary = reactive({ total_links: 0, total_visits: 0, active_links: 0, expired_links: 0, pending_links: 0 })
 const trend = ref([])
 const top = ref([])
+const topIPs = ref([])
 const loading = ref(false)
 
 const metrics = computed(() => [
@@ -205,16 +227,18 @@ async function switchMode(mode) {
 async function load() {
   loading.value = true
   try {
-    const [a, b, c, d] = await Promise.all([
+    const [a, b, c, d, e] = await Promise.all([
       api.get('/api/stats/summary'),
       api.get('/api/stats/trend', { params: { days: 14 } }),
       api.get('/api/stats/top', { params: { limit: 5 } }),
+      api.get('/api/stats/top-ips', { params: { limit: 5 } }),
       api.get('/api/stats/geo', { params: { days: 30 } })
     ])
     if (a.code === 0) Object.assign(summary, a.data)
     if (b.code === 0) trend.value = b.data
     if (c.code === 0) top.value = c.data
     if (d.code === 0) geoWorld.value = d.data
+    if (e.code === 0) topIPs.value = e.data
     await ensureMapData('world')
   } finally {
     loading.value = false
