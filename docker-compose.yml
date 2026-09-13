@@ -1,0 +1,34 @@
+name: shortlinkgo
+
+services:
+  shortlinkgo:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
+        GOSUMDB: ${GOSUMDB:-sum.golang.google.cn}
+    image: shortlinkgo:latest
+    container_name: shortlinkgo
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      PORT: "8080"
+      GIN_MODE: release
+      DB_PATH: /app/data/data.db
+      JWT_KEY: ${JWT_KEY:-please-change-me-to-a-long-random-secret}
+      HOST: ${HOST:-http://localhost:8080}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SITE_NAME: ${SITE_NAME:-}
+      SITE_DESC: ${SITE_DESC:-}
+      GEO_DB_PATH: ${GEO_DB_PATH:-}
+    volumes:
+      - shortlinkgo-data:/app/data
+
+volumes:
+  shortlinkgo-data:

@@ -1,0 +1,50 @@
+# ---- 运行产物与本地数据 ----
+/shortlinkgo
+/shortlinkgo.exe
+*.exe
+*.test
+*.out
+/data.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+.env
+
+# ---- 运行时上传文件（保留目录结构） ----
+uploads/*
+!uploads/avatars/
+!uploads/site/
+uploads/avatars/*
+!uploads/avatars/.gitkeep
+uploads/site/*
+!uploads/site/.gitkeep
+
+# ---- GeoIP 数据库（体积大且需自行获取，服务启动时按路径加载） ----
+/data/
+*.mmdb
+
+# ---- 前端依赖与构建产物 ----
+web/node_modules/
+web/dist/
+
+# ---- 工具生成的本地目录 ----
+.mimosa/
+
+# ---- IDE / 编辑器 / OS ----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 测试临时文件 ----
+_smoke.db
+smoke_*.log
+pid.txt
+token.txt
+token_*.txt
+o.log
+e.log

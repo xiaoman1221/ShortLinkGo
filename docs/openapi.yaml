@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: ShortLinkGo API
+  description: 短链接服务接口
+  version: 0.1.0
+servers:
+  - url: /
+
+paths:
+  /api/health:
+    get:
+      summary: 健康检查
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, example: 0 }
+                  msg: { type: string, example: ok }
+
+  /api/auth/register:
+    post:
+      summary: 注册
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                nickname: { type: string }
+      responses:
+        "200": { description: 注册成功 }
+        "400": { description: 参数错误 }
+
+  /api/auth/login:
+    post:
+      summary: 登录，返回 JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, example: 0 }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      user: { type: object }
+
+  /api/links:
+    get:
+      summary: 短链接列表（分页）
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200": { description: OK }
+        "401": { description: 未登录 }
+    post:
+      summary: 创建短链接
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, example: "https://example.com/very/long/path" }
+                remark: { type: string }
+                expire_at: { type: string, description: "RFC3339，可空" }
+      responses:
+        "200": { description: 创建成功 }
+
+  /api/links/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    get:
+      summary: 查询短链接
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+    put:
+      summary: 更新短链接
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+                remark: { type: string }
+                status: { type: integer, enum: [0, 1] }
+                expire_at: { type: string }
+                clear_expire: { type: boolean }
+      responses:
+        "200": { description: 更新成功 }
+    delete:
+      summary: 删除短链接
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: 删除成功 }
+
+  /api/stats/summary:
+    get:
+      summary: 统计概览
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      total_links: { type: integer }
+                      total_visits: { type: integer }
+                      active_links: { type: integer }
+                      expired_links: { type: integer }
+
+  /{code}:
+    get:
+      summary: 访问短链接（302 跳转）
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string } }
+      responses:
+        "302": { description: 跳转至目标链接 }
+        "404": { description: 链接不存在、被禁用或已过期 }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

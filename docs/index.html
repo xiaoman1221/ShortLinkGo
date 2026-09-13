@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ShortLinkGo - 接口文档</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; max-width: 860px; margin: 48px auto; padding: 0 20px; color: #333; line-height: 1.75; }
+    h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; border-bottom: 2px solid #18181b; padding-bottom: 12px; }
+    h2 { margin-top: 44px; font-size: 22px; }
+    h3 { margin-top: 28px; font-size: 17px; }
+    a { color: #18181b; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    code { background: #f4f4f5; padding: 1px 6px; border-radius: 4px; }
+    pre { background: #121214; color: #e4e4e7; padding: 16px 18px; border-radius: 8px; overflow-x: auto; line-height: 1.7; }
+    pre code { background: none; padding: 0; color: inherit; }
+    table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    th, td { text-align: left; border: 1px solid #e5e5e5; padding: 8px 10px; }
+    th { background: #fafafa; font-weight: 600; }
+    .muted { color: #71717a; font-size: 13px; }
+    .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border: 1px solid #d4d4d8; border-radius: 999px; margin-left: 6px; vertical-align: 2px; }
+  </style>
+</head>
+<body>
+  <h1>ShortLinkGo 接口文档</h1>
+  <p class="muted">基于 Go + Gin + GORM + SQLite 的短链接服务。前端管理后台：统计（含访问地图）/ 链接管理 / 个人中心 / 系统管理。</p>
+  <ul>
+    <li><a href="/docs/openapi.yaml">OpenAPI 规范（openapi.yaml）</a></li>
+    <li><a href="/docs/swagger.html">Swagger UI 在线调试</a></li>
+  </ul>
+
+  <h2>账号与鉴权</h2>
+  <p>系统不再内置默认账号。首个注册用户自动成为<strong>超级管理员（UID=1）</strong>。角色分为：超级管理员（super）/ 管理员（admin）/ VIP / 用户（user）；被封禁账号无法登录。</p>
+  <h3>1. 登录获取 JWT</h3>
+  <pre><code>curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"123456"}'
+# 响应 data.token 为 JWT，请求时携带：Authorization: Bearer &lt;jwt&gt;</code></pre>
+  <h3>2. API 令牌（个人中心创建）</h3>
+  <p>令牌用于脚本 / 第三方程序以<strong>当前用户身份</strong>调用本人短链接接口（增删改查），与 JWT 等效。在「个人中心 → API 令牌」创建，创建时仅展示一次，请妥善保存。</p>
+  <pre><code># 列出我的短链接
+curl http://localhost:8080/api/links -H "Authorization: Bearer slg_xxxx"
+
+# 创建短链接（自定义短码可选）
+curl -X POST http://localhost:8080/api/links \
+  -H "Authorization: Bearer slg_xxxx" -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/very/long","code":"summer-sale","remark":"活动"}'
+
+# 更新 / 删除
+curl -X PUT  http://localhost:8080/api/links/1 -H "Authorization: Bearer slg_xxxx" -H "Content-Type: application/json" -d '{"status":0}'
+curl -X DELETE http://localhost:8080/api/links/1 -H "Authorization: Bearer slg_xxxx"</code></pre>
+  <p class="muted">普通用户创建的短链接默认为「待审核」，审核通过（status=1）后才可访问；管理员/超级管理员创建的链接直接生效。</p>
+
+  <h2>链接与审核</h2>
+  <table>
+    <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+    <tr><td>GET</td><td><code>/{code}</code></td><td>访问短链接（302），记录 IP/地理位置/UA</td></tr>
+    <tr><td>GET / POST</td><td><code>/api/links</code></td><td>列表（普通用户仅本人；管理员含所有人并带 owner_name）/ 创建</td></tr>
+    <tr><td>GET / PUT / DELETE</td><td><code>/api/links/:id</code></td><td>详情 / 更新 / 删除</td></tr>
+    <tr><td>POST</td><td><code>/api/links/:id/review</code></td><td>管理员审核：<code>{"status":1}</code> 通过、<code>0</code> 停用、<code>2</code> 待审核</td></tr>
+  </table>
+
+  <h2>统计</h2>
+  <table>
+    <tr><th>路径</th><th>说明</th></tr>
+    <tr><td><code>/api/stats/summary</code></td><td>链接总数 / 累计访问 / 启用 / 待审核 / 过期</td></tr>
+    <tr><td><code>/api/stats/trend?days=14</code></td><td>按天访问趋势</td></tr>
+    <tr><td><code>/api/stats/top?limit=5</code></td><td>访问最多 Top 链接</td></tr>
+    <tr><td><code>/api/stats/geo?days=30</code></td><td>按国家聚合的访问地理分布（访问地图数据源）</td></tr>
+  </table>
+  <p class="muted">IP 地理解析需要服务器放置 MaxMind GeoLite2-City.mmdb（环境变量 GEO_DB_PATH 指向），未配置时公网 IP 归入「未知」，内网归入「内网」。</p>
+
+  <h2>系统管理（管理员 / 超级管理员）</h2>
+  <table>
+    <tr><th>路径</th><th>说明</th></tr>
+    <tr><td><code>GET /api/admin/users</code></td><td>用户列表（管理员及以上）</td></tr>
+    <tr><td><code>PUT /api/admin/users/:id/role</code></td><td>设置角色（仅超级管理员）</td></tr>
+    <tr><td><code>PUT /api/admin/users/:id/status</code></td><td>封禁 / 解封（仅超级管理员）</td></tr>
+    <tr><td><code>GET / PUT /api/settings</code></td><td>读取 / 保存系统设置（站点信息 + SMTP）</td></tr>
+    <tr><td><code>POST /api/settings/logo</code></td><td>上传站点 Logo（multipart）</td></tr>
+    <tr><td><code>POST /api/settings/smtp/test</code></td><td>发送 SMTP 测试邮件</td></tr>
+    <tr><td><code>GET /api/site</code></td><td>站点公开信息（名称 / Logo / 简介），无需登录</td></tr>
+  </table>
+
+  <h2>其他接口</h2>
+  <table>
+    <tr><th>路径</th><th>说明</th></tr>
+    <tr><td><code>/api/auth/register</code></td><td>注册（首个用户为超级管理员）</td></tr>
+    <tr><td><code>GET /api/auth/qq</code></td><td>QQ 互联登录跳转（系统管理配置 App ID / App Key 后启用）</td></tr>
+    <tr><td><code>/api/auth/forgot</code> / <code>/api/auth/reset</code></td><td>邮箱找回密码（SMTP 发送重置链接，30 分钟有效）</td></tr>
+    <tr><td><code>PUT /api/auth/profile</code> / <code>/api/auth/password</code> / <code>/api/auth/avatar</code></td><td>个人资料 / 修改密码 / 上传头像</td></tr>
+    <tr><td><code>GET / POST / DELETE /api/tokens</code></td><td>API 令牌管理</td></tr>
+    <tr><td><code>/api/health</code></td><td>健康检查</td></tr>
+  </table>
+
+  <p class="muted">响应统一为 <code>{"code":0,"msg":"succ","data":...}</code>；code 非 0 时与 HTTP 状态码一致。</p>
+</body>
+</html>
