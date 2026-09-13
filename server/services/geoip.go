@@ -63,18 +63,19 @@ var geoipState geoIPState
 
 // GeoIPStatus 下载器运行状态（管理端展示）。
 type GeoIPStatus struct {
-	Enabled     bool      `json:"enabled"`
-	AutoSource  bool      `json:"auto_source"`
-	URL         string    `json:"url"`
-	Source      string    `json:"source"`
-	Loaded      bool      `json:"loaded"`
-	FileExists  bool      `json:"file_exists"`
-	FileSize    int64     `json:"file_size"`
-	FileModTime time.Time `json:"file_mod_time"`
-	LastCheck   time.Time `json:"last_check"`
-	LastSuccess time.Time `json:"last_success"`
-	LastError   string    `json:"last_error"`
-	Downloading bool      `json:"downloading"`
+	Enabled     bool                `json:"enabled"`
+	AutoSource  bool                `json:"auto_source"`
+	URL         string              `json:"url"`
+	Source      string              `json:"source"`
+	Loaded      bool                `json:"loaded"`
+	FileExists  bool                `json:"file_exists"`
+	FileSize    int64               `json:"file_size"`
+	FileModTime time.Time           `json:"file_mod_time"`
+	LastCheck   time.Time           `json:"last_check"`
+	LastSuccess time.Time           `json:"last_success"`
+	LastError   string              `json:"last_error"`
+	Downloading bool                `json:"downloading"`
+	Backfill    GeoIPBackfillStatus `json:"backfill"`
 }
 
 // StartGeoIPUpdater 启动 GeoIP 更新协程：启动时立即检查一次，此后每小时检查一次。
@@ -129,6 +130,7 @@ func GetGeoIPStatus(db *gorm.DB) GeoIPStatus {
 		}
 	}
 	st.Loaded = utils.GeoDBLoaded()
+	st.Backfill = GetGeoIPBackfillStatus(db)
 	return st
 }
 

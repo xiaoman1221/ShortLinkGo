@@ -48,6 +48,21 @@ type VisitLog struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// IpGeoCache 公共 API 查询的 IP 地理位置缓存（一次查询，永久复用）。
+type IpGeoCache struct {
+	IP        string    `gorm:"primaryKey;size:64" json:"ip"`
+	Country   string    `gorm:"size:64" json:"country"`
+	Region    string    `gorm:"size:64" json:"region"`
+	City      string    `gorm:"size:64" json:"city"`
+	Lat       float64   `json:"lat"`
+	Lon       float64   `json:"lon"`
+	Source    string    `gorm:"size:32" json:"source"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName 指定单数表名。
+func (IpGeoCache) TableName() string { return "ip_geo_cache" }
+
 // Setting 系统设置（键值对）。
 type Setting struct {
 	ID    uint   `gorm:"primaryKey" json:"id"`

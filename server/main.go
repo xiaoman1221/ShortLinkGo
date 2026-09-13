@@ -17,8 +17,10 @@ func main() {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 
-	// GeoIP 数据库：启动时加载本地文件（如有），启用后每小时自动检查更新
+	// GeoIP 数据库：启动时加载本地文件（如有），启用后每小时自动检查更新；
+	// 未识别 IP 由公共 API 兜底（后台批量回填，配置在网页）
 	services.StartGeoIPUpdater(db)
+	services.StartGeoIPBackfill(db)
 
 	r := api.New(cfg, db)
 

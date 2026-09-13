@@ -17,7 +17,6 @@ build.sh
 README.md
 
 # 运行时数据与工具目录
-uploads
 data
 *.mmdb
 .mimosa

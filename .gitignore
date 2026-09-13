@@ -12,15 +12,6 @@
 *.log
 .env
 
-# ---- 运行时上传文件（保留目录结构） ----
-uploads/*
-!uploads/avatars/
-!uploads/site/
-uploads/avatars/*
-!uploads/avatars/.gitkeep
-uploads/site/*
-!uploads/site/.gitkeep
-
 # ---- GeoIP 数据库（体积大且需自行获取，服务启动时按路径加载） ----
 /data/
 *.mmdb

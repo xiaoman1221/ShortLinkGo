@@ -25,10 +25,10 @@
 - **链接审核与角色范围** - 普通用户仅见本人链接且新链接默认「待审核」；管理员/超级管理员可见全部链接并标注创建者，可审核（通过/停用/待审核）
 - **账号体系与角色** - 首个注册用户为超级管理员（UID=1）；角色 super/admin/vip/user，支持注册 / 登录 / 邮箱找回密码 / 个人资料 / 修改密码 / 头像
 - **API Token** - 个人中心创建令牌，可用 `Authorization: Bearer <token>` 增删改查本人短链接（与 JWT 等效）
-- **系统管理** - 仅管理员/超级管理员可访问；用户管理（超级管理员可改角色、封禁）；网站基本信息（名称/简介/菜单栏 Logo）；SMTP 配置与测试邮件；GeoIP 数据库（网页开关、下载源配置、启动自动下载、每小时检查更新、热重载）
+- **系统管理** - 仅管理员/超级管理员可访问；用户管理（超级管理员可改角色、封禁）；网站基本信息（名称/简介/站点地址自动检测/菜单栏 Logo）；SMTP 配置与测试邮件；GeoIP 数据库（网页开关、下载源配置、启动自动下载、每小时检查更新、热重载）
 - **QQ 登录** - 官方 QQ 互联 OAuth2 登录（系统管理配置 App ID/App Key，回调自动拼接）；QQ 新用户自动注册，可再设置密码/绑定邮箱
 - **SMTP 邮件** - 支持 465 隐式 TLS 与 25/587 STARTTLS，用于发送找回密码邮件
-- **访问留痕与 GeoIP** - 每次访问记录 IP、国家/城市、UA、来源；真实 IP 自动探测转发头（smart/always/direct/cidr 四种模式网页可切）；GeoLite2 数据库在后台「访问地图」一键启用，自动下载并每小时更新
+- **访问留痕与 GeoIP** - 每次访问记录 IP、国家/城市、UA、来源；真实 IP 自动探测转发头（smart/always/direct/cidr 四种模式网页可切）；GeoLite2 数据库在后台「访问地图」一键启用，自动下载并每小时更新；解析不出的 IP 自动调用公共查询 API（ip-api/ipinfo/ipwho.is/自定义可切换）兜底并缓存入库
 - **接口文档** - `/docs` 提供接入文档（含 API Token
 - 用法）、OpenAPI 规范与 Swagger UI
 
@@ -54,6 +54,8 @@ docker compose up -d --build
 ```
 
 访问 http://localhost:8080
+
+> 从旧版本升级：上传目录已从 `./uploads` 迁移至 `./data/uploads`（容器内为数据卷 `/app/data/uploads`，随数据库一同持久化）。宿主机部署请手动移动旧目录：`mkdir -p data && mv uploads data/uploads`。
 
 #### 使用已发布的镜像
 
@@ -120,7 +122,6 @@ cp .env.example .env
 | `DB_PATH` | 数据库文件路径 | data.db |
 | `JWT_KEY` | JWT密钥 | -       |
 | `JWT_EXPIRE` | JWT有效期（秒） | 86400   |
-| `HOST` | 站点对外地址，用于拼装短链接与找回密码链接 | -       |
 | `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASS` `SMTP_FROM` | 首次启动写入系统设置的 SMTP 配置（也可在后台“系统管理”配置） | - |
 | `SITE_NAME` `SITE_DESC` | 首次启动写入的站点名称/简介 | - |
 | `GEO_DB_PATH` | MaxMind GeoLite2-City.mmdb 路径（访问地图地理解析，可选） | - |
@@ -189,13 +190,13 @@ curl -I http://localhost:8080/aB3xYz   # 302 Location: https://example.com/very/
 ```
 ShortLinkGo/
 ├── docs/            # 接口文档资源（index.html / openapi.yaml / swagger.html）
+├── data/            # 运行时数据（数据库 / 上传文件 / GeoIP 库，运行时生成，已忽略）
 ├── server/          # 后端（Go）
 │   ├── api/         #   HTTP 层：路由、处理器、鉴权中间件（JWT/API Token、角色门禁）
 │   ├── app/         #   应用装配：配置加载、数据库初始化与迁移
 │   ├── services/    #   业务逻辑与数据模型
 │   ├── utils/       #   工具（响应/密码/JWT/邮件/IP 地理解析，可选 GeoLite2 mmdb）
 │   └── main.go      #   入口
-├── uploads/         # 运行时上传文件（头像/Logo，运行时生成）
 ├── web/             # Vue前端
 │   ├── src/
 │   └── dist/        # 前端构建产物

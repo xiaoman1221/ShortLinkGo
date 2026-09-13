@@ -88,6 +88,15 @@
           </div>
         </div>
         <label class="field">
+          <span>站点地址 <em class="opt">（用于短链展示、找回密码与 QQ 回调链接；留空自动按当前请求识别）</em></span>
+          <div class="site-url-row">
+            <input v-model="siteForm.site_url" type="text" placeholder="https://s.example.com" />
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="detecting" @click="detectURL">
+              {{ detecting ? '检测中…' : '自动检测' }}
+            </button>
+          </div>
+        </label>
+        <label class="field">
           <span>站点名称</span>
           <input v-model="siteForm.site_name" type="text" placeholder="ShortLinkGo" />
         </label>
@@ -190,6 +199,46 @@
       </form>
 
       <div class="test-box">
+        <p class="eyebrow">公共 API 兜底 · Fallback</p>
+        <p class="desc" style="margin-top: 12px">
+          本地 GeoIP 库解析不出的 IP，自动调用公共查询 API 补齐国家/城市并回填历史记录（结果缓存，同一 IP 只查一次）。
+        </p>
+        <form @submit.prevent="saveBackfill">
+          <label class="switch-field">
+            <input v-model="bfForm.geoip_api_enabled" type="checkbox" />
+            <span>启用公共 API 兜底（每 10 分钟后台批量回填）</span>
+          </label>
+          <label class="field">
+            <span>查询提供商</span>
+            <select v-model="bfForm.geoip_api_provider" class="select" style="height: 38px">
+              <option value="ip-api">ip-api.com — 免费无 key，批量查询（默认）</option>
+              <option value="ipwhois">ipwho.is — https 加密，免费无 key</option>
+              <option value="ipinfo">ipinfo.io — https，无 key 有限额，可填 token</option>
+              <option value="custom">自定义 — ip-api 兼容格式，地址含 {ip} 占位</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>API Key / Token <em class="opt">{{ bfKeySet ? '（已设置，留空保持不变）' : '' }}</em></span>
+            <input v-model="bfForm.geoip_api_key" type="password" autocomplete="new-password" placeholder="ip-api 与 ipwho.is 无需填写" />
+          </label>
+          <label class="field">
+            <span>自定义地址模板 <em class="opt">（仅自定义提供商使用）</em></span>
+            <input v-model="bfForm.geoip_api_url" type="text" autocomplete="off" placeholder="http://your-api.example.com/lookup?ip={ip}" />
+          </label>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit" :disabled="savingBF">{{ savingBF ? '保存中…' : '保存兜底配置' }}</button>
+            <button class="btn btn-ghost" type="button" :disabled="bfForm.geoip_api_enabled !== true" @click="triggerBackfill">立即回填</button>
+          </div>
+        </form>
+        <dl v-if="geoStatus.backfill" class="geo-status" style="margin-top: 18px">
+          <div><dt>上次运行</dt><dd>{{ geoStatus.backfill.last_run ? formatTime(geoStatus.backfill.last_run) : '—' }}</dd></div>
+          <div><dt>查询 / 回填</dt><dd class="num">{{ geoStatus.backfill.last_queried }} / {{ geoStatus.backfill.last_updated }}</dd></div>
+          <div><dt>缓存条数</dt><dd class="num">{{ geoStatus.backfill.cache_count }}</dd></div>
+          <div v-if="geoStatus.backfill.last_error" class="err"><dt>上次错误</dt><dd class="danger-text">{{ geoStatus.backfill.last_error }}</dd></div>
+        </dl>
+      </div>
+
+      <div class="test-box">
         <p class="eyebrow">真实访客 IP · Client IP</p>
         <p class="desc" style="margin-top: 12px">
           决定跳转统计中如何获取访客真实 IP。直连地址指与服务器直接通信的地址（反代/容器场景为代理地址）。
@@ -257,7 +306,8 @@ const keyword = ref('')
 const loadingUsers = ref(false)
 
 /* site */
-const siteForm = reactive({ site_name: '', site_desc: '', site_logo: '' })
+const siteForm = reactive({ site_name: '', site_desc: '', site_logo: '', site_url: '' })
+const detecting = ref(false)
 const savingSite = ref(false)
 const logoInput = ref(null)
 
@@ -284,6 +334,11 @@ const loadingGeoStatus = ref(false)
 /* client ip */
 const ipForm = reactive({ client_ip_mode: 'smart', client_ip_trusted_proxies: '' })
 const savingIP = ref(false)
+
+/* geoip api fallback */
+const bfForm = reactive({ geoip_api_enabled: false, geoip_api_provider: 'ip-api', geoip_api_key: '', geoip_api_url: '' })
+const bfKeySet = ref(false)
+const savingBF = ref(false)
 
 const ROLE_NAMES = { super: '超级管理员', admin: '管理员', vip: 'VIP', user: '用户' }
 function roleName(r) {
@@ -333,6 +388,8 @@ async function loadSettings() {
     siteForm.site_name = res.data.site_name || ''
     siteForm.site_desc = res.data.site_desc || ''
     siteForm.site_logo = res.data.site_logo || ''
+    siteForm.site_url = res.data.site_url || ''
+    if (!siteForm.site_url) detectURL(true)
     smtpForm.smtp_host = res.data.smtp_host || ''
     smtpForm.smtp_port = res.data.smtp_port || ''
     smtpForm.smtp_user = res.data.smtp_user || ''
@@ -349,6 +406,11 @@ async function loadSettings() {
     geoKeySet.value = res.data.geoip_license_key_set === '1'
     ipForm.client_ip_mode = res.data.client_ip_mode || 'smart'
     ipForm.client_ip_trusted_proxies = res.data.client_ip_trusted_proxies || ''
+    bfForm.geoip_api_enabled = res.data.geoip_api_enabled === '1'
+    bfForm.geoip_api_provider = res.data.geoip_api_provider || 'ip-api'
+    bfForm.geoip_api_key = ''
+    bfForm.geoip_api_url = res.data.geoip_api_url || ''
+    bfKeySet.value = res.data.geoip_api_key_set === '1'
   }
 }
 
@@ -357,7 +419,8 @@ async function saveSite() {
   try {
     const res = await api.put('/api/settings', {
       site_name: siteForm.site_name.trim(),
-      site_desc: siteForm.site_desc.trim()
+      site_desc: siteForm.site_desc.trim(),
+      site_url: siteForm.site_url.trim()
     })
     if (res.code === 0) {
       site.load()
@@ -365,6 +428,19 @@ async function saveSite() {
     }
   } finally {
     savingSite.value = false
+  }
+}
+
+async function detectURL(silent) {
+  detecting.value = true
+  try {
+    const res = await api.get('/api/settings/site-url/detect')
+    if (res.code === 0 && res.data.detected) {
+      siteForm.site_url = res.data.detected
+      if (silent !== true) toast('已识别当前地址：' + res.data.detected, 'ok')
+    }
+  } finally {
+    detecting.value = false
   }
 }
 
@@ -489,6 +565,33 @@ async function saveIPMode() {
   }
 }
 
+async function saveBackfill() {
+  savingBF.value = true
+  try {
+    const res = await api.put('/api/settings', {
+      geoip_api_enabled: bfForm.geoip_api_enabled ? '1' : '0',
+      geoip_api_provider: bfForm.geoip_api_provider,
+      geoip_api_key: bfForm.geoip_api_key,
+      geoip_api_url: bfForm.geoip_api_url.trim()
+    })
+    if (res.code === 0) {
+      bfForm.geoip_api_key = ''
+      toast('公共 API 兜底配置已保存', 'ok')
+      loadGeoStatus()
+    }
+  } finally {
+    savingBF.value = false
+  }
+}
+
+async function triggerBackfill() {
+  const res = await api.post('/api/settings/geoip/backfill')
+  if (res.code === 0) {
+    toast(res.msg || '已开始后台回填', 'ok')
+    setTimeout(loadGeoStatus, 1500)
+  }
+}
+
 function openGeo() {
   tab.value = 'geo'
   loadGeoStatus()
@@ -568,6 +671,8 @@ onMounted(() => {
 
 .inline-code { font-family: var(--font-mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; word-break: break-all; }
 .qq-note { margin-top: 18px; }
+.site-url-row { display: flex; gap: 10px; }
+.site-url-row input { flex: 1; min-width: 0; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 16px; }
 .actions { display: flex; gap: 12px; }
 .test-box { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }

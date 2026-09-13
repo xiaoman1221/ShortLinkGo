@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ var allowedSettingKeys = map[string]bool{
 	"site_name":                 true,
 	"site_logo":                 true,
 	"site_desc":                 true,
+	"site_url":                  true,
 	"qq_app_id":                 true,
 	"qq_app_key":                true,
 	"geoip_enabled":             true,
@@ -28,6 +30,18 @@ var allowedSettingKeys = map[string]bool{
 	"geoip_license_key":         true,
 	"client_ip_mode":            true,
 	"client_ip_trusted_proxies": true,
+	"geoip_api_enabled":         true,
+	"geoip_api_provider":        true,
+	"geoip_api_key":             true,
+	"geoip_api_url":             true,
+}
+
+// GeoIPAPIProviders 公共 IP 查询提供商（网页可切换）。
+var GeoIPAPIProviders = map[string]bool{
+	"ip-api":  true, // 免费无 key，批量查询，免费版仅 http
+	"ipinfo":  true, // https，无 key 有限额
+	"ipwhois": true, // https 免费无 key
+	"custom":  true, // 自定义 URL 模板（{ip} 占位，ip-api 兼容响应格式）
 }
 
 // ClientIPModes 真实 IP 识别模式（网页可切换）。
@@ -72,6 +86,26 @@ func (s *SettingService) Set(key, value string) error {
 	if key == "smtp_port" && value != "" {
 		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 65535 {
 			return errors.New("SMTP 端口无效")
+		}
+	}
+	if key == "site_url" {
+		value = strings.TrimRight(strings.TrimSpace(value), "/")
+		if value != "" {
+			u, err := url.Parse(value)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return errors.New("站点地址无效，应为 http(s)://域名 形式")
+			}
+			value = u.Scheme + "://" + u.Host
+		}
+	}
+	if key == "geoip_api_provider" {
+		if !GeoIPAPIProviders[value] {
+			return errors.New("无效的提供商，可选 ip-api/ipinfo/ipwhois/custom")
+		}
+	}
+	if key == "geoip_api_url" && strings.TrimSpace(value) != "" {
+		if !strings.Contains(value, "{ip}") {
+			return errors.New("自定义地址必须包含 {ip} 占位符")
 		}
 	}
 	if key == "client_ip_mode" {
@@ -160,4 +194,13 @@ func (s *SettingService) ClientIPSettings() (string, string) {
 		mode = "smart"
 	}
 	return mode, strings.TrimSpace(all["client_ip_trusted_proxies"])
+}
+
+// SiteURL 数据库中保存的站点对外地址（空 = 未配置，调用方回退到请求 Host）。
+func (s *SettingService) SiteURL() string {
+	all, err := s.All()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(all["site_url"]), "/")
 }

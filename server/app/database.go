@@ -38,6 +38,7 @@ func Init(path string) (*gorm.DB, error) {
 		&services.Setting{},
 		&services.PasswordReset{},
 		&services.ApiToken{},
+		&services.IpGeoCache{},
 	); err != nil {
 		return nil, err
 	}

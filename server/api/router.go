@@ -38,9 +38,8 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 		Svc:      authSvc,
 		Settings: settingSvc,
 		Debug:    cfg.GinMode == "debug",
-		BaseHost: cfg.Host,
 	}
-	linkH := &LinkHandler{Svc: linkSvc, Settings: settingSvc, Host: cfg.Host}
+	linkH := &LinkHandler{Svc: linkSvc, Settings: settingSvc}
 	settingH := &SettingsHandler{Svc: settingSvc}
 	tokenH := &TokenHandler{Svc: tokenSvc}
 	userAdminH := &UserAdminHandler{Svc: authSvc}
@@ -118,12 +117,14 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 		settings.PUT("", settingH.Update)
 		settings.POST("/smtp/test", settingH.TestSMTP)
 		settings.POST("/logo", settingH.UploadLogo)
+		settings.GET("/site-url/detect", settingH.DetectSiteURL)
 		settings.GET("/geoip/status", settingH.GeoIPStatus)
 		settings.POST("/geoip/update", settingH.GeoIPUpdate)
+		settings.POST("/geoip/backfill", settingH.GeoIPBackfill)
 	}
 
-	// 上传文件（头像/Logo）
-	r.Static("/uploads", "./uploads")
+	// 上传文件（头像/Logo，存储于 data/uploads，容器内为数据卷 /app/data/uploads）
+	r.Static("/uploads", "./data/uploads")
 
 	// 接口文档
 	r.Static("/docs", "./docs")

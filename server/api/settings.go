@@ -66,6 +66,15 @@ func (h *SettingsHandler) GeoIPStatus(c *gin.Context) {
 	utils.OK(c, services.GetGeoIPStatus(h.Svc.DB))
 }
 
+// GeoIPBackfill POST /api/settings/geoip/backfill —— 立即触发一次未识别 IP 回填（异步执行）。
+func (h *SettingsHandler) GeoIPBackfill(c *gin.Context) {
+	if err := services.TriggerGeoIPBackfill(h.Svc.DB); err != nil {
+		utils.BadRequest(c, err.Error())
+		return
+	}
+	utils.OKMsg(c, "已开始后台回填，稍后可刷新状态查看结果", nil)
+}
+
 // GeoIPUpdate POST /api/settings/geoip/update —— 立即触发一次检查/下载（异步执行）。
 func (h *SettingsHandler) GeoIPUpdate(c *gin.Context) {
 	if err := services.TriggerGeoIPUpdate(h.Svc.DB); err != nil {

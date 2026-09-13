@@ -4,7 +4,6 @@ package api
 import (
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -16,8 +15,7 @@ import (
 type AuthHandler struct {
 	Svc      *services.AuthService
 	Settings *services.SettingService
-	Debug    bool   // 开发模式：SMTP 未配置时返回重置链接便于本地联调
-	BaseHost string // 站点对外地址（config.Host），空时用请求 Host
+	Debug    bool // 开发模式：SMTP 未配置时返回重置链接便于本地联调
 }
 
 // Register POST /api/auth/register
@@ -277,17 +275,9 @@ func (h *AuthHandler) QQCallback(c *gin.Context) {
 	c.Redirect(http.StatusFound, base+"/#/oauth?token="+url.QueryEscape(token))
 }
 
-// frontendBase 计算前端站点地址（不含路径）。
+// frontendBase 计算前端站点地址（不含路径）：数据库站点地址优先，回退请求 Host。
 func (h *AuthHandler) frontendBase(c *gin.Context) string {
-	base := strings.TrimRight(h.BaseHost, "/")
-	if base == "" {
-		scheme := "http"
-		if c.Request.TLS != nil {
-			scheme = "https"
-		}
-		base = scheme + "://" + c.Request.Host
-	}
-	return base
+	return resolveSiteBase(c, h.Settings)
 }
 
 // callbackBase 计算回调地址（OAuth redirect_uri 使用）。
@@ -296,13 +286,5 @@ func (h *AuthHandler) callbackBase(c *gin.Context) string {
 }
 
 func (h *AuthHandler) resetURL(c *gin.Context, token string) string {
-	base := strings.TrimRight(h.BaseHost, "/")
-	if base == "" {
-		scheme := "http"
-		if c.Request.TLS != nil {
-			scheme = "https"
-		}
-		base = scheme + "://" + c.Request.Host
-	}
-	return base + "/#/reset?token=" + token
+	return h.frontendBase(c) + "/#/reset?token=" + token
 }

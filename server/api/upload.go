@@ -15,8 +15,9 @@ import (
 	"ShortLinkGo/server/utils"
 )
 
-// uploadRoot 上传文件根目录（通过 /uploads 静态服务）。
-const uploadRoot = "./uploads"
+// uploadRoot 上传文件根目录（相对工作目录；容器内为 /app/data/uploads 数据卷，
+// 与数据库、GeoIP 库一同持久化）。对外访问 URL 保持 /uploads 不变。
+const uploadRoot = "data/uploads"
 
 // allowedImageExt 允许上传的图片扩展名。
 var allowedImageExt = map[string]bool{

@@ -16,8 +16,7 @@ import (
 // LinkHandler 短链接相关接口。
 type LinkHandler struct {
 	Svc      *services.LinkService
-	Settings *services.SettingService // 真实 IP 识别模式配置
-	Host     string
+	Settings *services.SettingService // 站点地址与真实 IP 识别配置
 }
 
 // linkVO 返回给前端的视图对象（附带 short_url 与创建者）。
@@ -27,16 +26,17 @@ type linkVO struct {
 	OwnerName string `json:"owner_name,omitempty"`
 }
 
-func (h *LinkHandler) toVO(l *services.Link) linkVO {
-	return linkVO{Link: *l, ShortURL: h.shortURL(l.Code)}
+func (h *LinkHandler) toVO(c *gin.Context, l *services.Link) linkVO {
+	return linkVO{Link: *l, ShortURL: h.shortURL(c, l.Code)}
 }
 
-func (h *LinkHandler) shortURL(code string) string {
-	host := strings.TrimRight(h.Host, "/")
-	if host == "" {
+// shortURL 拼装短链接：站点地址取网页配置（数据库），未配置时返回相对路径。
+func (h *LinkHandler) shortURL(c *gin.Context, code string) string {
+	base := strings.TrimRight(h.Settings.SiteURL(), "/")
+	if base == "" {
 		return "/" + code
 	}
-	return host + "/" + code
+	return base + "/" + code
 }
 
 func roleOf(c *gin.Context) string {
@@ -78,7 +78,7 @@ func (h *LinkHandler) List(c *gin.Context) {
 		names = h.ownerNames(list)
 	}
 	for i := range list {
-		vo := h.toVO(&list[i])
+		vo := h.toVO(c, &list[i])
 		if n, ok := names[list[i].UserID]; ok {
 			vo.OwnerName = n
 		}
@@ -145,7 +145,7 @@ func (h *LinkHandler) Create(c *gin.Context) {
 	if l.Status == services.LinkStatusPending {
 		msg = "创建成功，待管理员审核"
 	}
-	utils.OKMsg(c, msg, h.toVO(l))
+	utils.OKMsg(c, msg, h.toVO(c, l))
 }
 
 // Get GET /api/links/:id
@@ -165,7 +165,7 @@ func (h *LinkHandler) Get(c *gin.Context) {
 		utils.NotFound(c, err.Error())
 		return
 	}
-	utils.OK(c, h.toVO(l))
+	utils.OK(c, h.toVO(c, l))
 }
 
 // Update PUT /api/links/:id
@@ -190,7 +190,7 @@ func (h *LinkHandler) Update(c *gin.Context) {
 		utils.BadRequest(c, err.Error())
 		return
 	}
-	utils.OKMsg(c, "更新成功", h.toVO(l))
+	utils.OKMsg(c, "更新成功", h.toVO(c, l))
 }
 
 // Review POST /api/links/:id/review  body: {"status":1}（管理员审核）
@@ -224,11 +224,11 @@ func (h *LinkHandler) Review(c *gin.Context) {
 	}
 	switch l.Status {
 	case services.LinkStatusActive:
-		utils.OKMsg(c, "已通过审核", h.toVO(l))
+		utils.OKMsg(c, "已通过审核", h.toVO(c, l))
 	case services.LinkStatusPending:
-		utils.OKMsg(c, "已设为待审核", h.toVO(l))
+		utils.OKMsg(c, "已设为待审核", h.toVO(c, l))
 	default:
-		utils.OKMsg(c, "已停用", h.toVO(l))
+		utils.OKMsg(c, "已停用", h.toVO(c, l))
 	}
 }
 
@@ -297,7 +297,7 @@ func (h *LinkHandler) Top(c *gin.Context) {
 	}
 	vos := make([]linkVO, 0, len(list))
 	for i := range list {
-		vos = append(vos, h.toVO(&list[i]))
+		vos = append(vos, h.toVO(c, &list[i]))
 	}
 	utils.OK(c, vos)
 }

@@ -15,7 +15,6 @@ type Config struct {
 	GinMode   string // Gin 运行模式 debug/release/test
 	DBPath    string // SQLite 数据库文件路径
 	JWTKey    string // JWT 签名密钥
-	Host      string // 站点对外地址，用于拼装短链接，如 https://s.example.com
 	JWTExpire int64  // JWT 有效期（秒）
 }
 
@@ -27,7 +26,6 @@ func Load() *Config {
 		GinMode:   getEnv("GIN_MODE", "release"),
 		DBPath:    getEnv("DB_PATH", "data.db"),
 		JWTKey:    os.Getenv("JWT_KEY"),
-		Host:      getEnv("HOST", ""),
 		JWTExpire: getEnvInt64("JWT_EXPIRE", 24*3600),
 	}
 	if cfg.JWTKey == "" {
