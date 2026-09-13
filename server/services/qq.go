@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/utils"
 )
 
 // QQConfig QQ 互联应用配置。

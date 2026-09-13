@@ -12,8 +12,12 @@ _smoke.db
 # 构建产物（web/dist 与二进制由 Dockerfile 内部重新构建）
 web/node_modules
 web/dist
-domain-manager
-domain-manager.exe
 Makefile
 build.sh
 README.md
+
+# 运行时数据与工具目录
+uploads
+data
+*.mmdb
+.mimosa

@@ -162,16 +162,13 @@ curl -I http://localhost:8080/aB3xYz   # 302 Location: https://example.com/very/
 
 ```
 ShortLinkGo/
-├── config/          # 配置加载
-├── database/        # 数据库初始化与迁移
 ├── docs/            # 接口文档资源（index.html / openapi.yaml / swagger.html）
-├── geo/             # IP 地理位置解析（可选 GeoLite2 mmdb）
-├── handlers/        # 请求处理器
-├── middleware/      # 中间件（JWT/API Token 统一鉴权、角色门禁）
-├── models/          # 数据模型
-├── router/          # 路由定义
-├── services/        # 业务逻辑
-├── utils/           # 工具函数（响应/密码/JWT/邮件/上传）
+├── server/          # 后端（Go）
+│   ├── api/         #   HTTP 层：路由、处理器、鉴权中间件（JWT/API Token、角色门禁）
+│   ├── app/         #   应用装配：配置加载、数据库初始化与迁移
+│   ├── services/    #   业务逻辑与数据模型
+│   ├── utils/       #   工具（响应/密码/JWT/邮件/IP 地理解析，可选 GeoLite2 mmdb）
+│   └── main.go      #   入口
 ├── uploads/         # 运行时上传文件（头像/Logo，运行时生成）
 ├── web/             # Vue前端
 │   ├── src/

@@ -1,5 +1,5 @@
-// Package database 负责 SQLite 数据库的初始化、自动迁移与默认数据填充。
-package database
+// Package app 负责应用装配：配置加载与数据库初始化。
+package app
 
 import (
 	"log"
@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"ShortLinkGo/models"
+	"ShortLinkGo/server/services"
 )
 
 // Init 打开数据库并执行自动迁移、初始化默认数据。
@@ -32,12 +32,12 @@ func Init(path string) (*gorm.DB, error) {
 	}
 
 	if err := db.AutoMigrate(
-		&models.User{},
-		&models.Link{},
-		&models.VisitLog{},
-		&models.Setting{},
-		&models.PasswordReset{},
-		&models.ApiToken{},
+		&services.User{},
+		&services.Link{},
+		&services.VisitLog{},
+		&services.Setting{},
+		&services.PasswordReset{},
+		&services.ApiToken{},
 	); err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func ensurePartialUniqueIndexes(db *gorm.DB) error {
 // ensureSuperAdmin 兼容旧库：若存在 ID=1 的用户则将其提升为超级管理员（super）。
 // 新库不创建任何默认账号，第一个注册的用户自动成为超级管理员。
 func ensureSuperAdmin(db *gorm.DB) error {
-	var u models.User
+	var u services.User
 	if err := db.First(&u, 1).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil
@@ -82,7 +82,7 @@ func ensureSuperAdmin(db *gorm.DB) error {
 		return err
 	}
 	if u.Role != "super" {
-		return db.Model(&models.User{}).Where("id = ?", 1).UpdateColumn("role", "super").Error
+		return db.Model(&services.User{}).Where("id = ?", 1).UpdateColumn("role", "super").Error
 	}
 	return nil
 }
@@ -104,11 +104,11 @@ func seedSettingsFromEnv(db *gorm.DB) error {
 			continue
 		}
 		var count int64
-		if err := db.Model(&models.Setting{}).Where("key = ?", k).Count(&count).Error; err != nil {
+		if err := db.Model(&services.Setting{}).Where("key = ?", k).Count(&count).Error; err != nil {
 			return err
 		}
 		if count == 0 {
-			if err := db.Create(&models.Setting{Key: k, Value: v}).Error; err != nil {
+			if err := db.Create(&services.Setting{Key: k, Value: v}).Error; err != nil {
 				return err
 			}
 		}

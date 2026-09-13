@@ -1,5 +1,5 @@
-// Package handlers 提供 HTTP 请求处理器。
-package handlers
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"net/http"
@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // AuthHandler 认证相关接口。

@@ -27,7 +27,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -trimpath -ldflags "-s -w" -o /out/shortlinkgo .
+RUN go build -trimpath -ldflags "-s -w" -o /out/shortlinkgo ./server
 
 # ---------- 阶段三：运行镜像 ----------
 FROM ${BASE_RUNTIME_IMAGE}

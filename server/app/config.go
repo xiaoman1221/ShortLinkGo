@@ -1,5 +1,5 @@
-// Package config 负责加载应用配置（全部来自环境变量）。
-package config
+// Package app 负责应用装配：配置加载与数据库初始化。
+package app
 
 import (
 	"crypto/rand"

@@ -1,7 +1,7 @@
-// Package geo 提供基于 IP 的访问地理位置解析。
-// 数据源：可选的 MaxMind GeoLite2-City.mmdb（可通过 GEO_DB_PATH 指定，
+// Package utils 提供通用工具：统一响应、密码哈希、JWT、邮件发送、IP 地理位置解析。
+// 地理解析数据源：可选的 MaxMind GeoLite2-City.mmdb（可通过 GEO_DB_PATH 指定，
 // 或放在 ./data/GeoLite2-City.mmdb）。未配置数据文件时，仅区分内网/公网。
-package geo
+package utils
 
 import (
 	"log"
@@ -13,8 +13,8 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-// Result 地理位置结果。
-type Result struct {
+// GeoResult 地理位置结果。
+type GeoResult struct {
 	Country string  `json:"country"`
 	Region  string  `json:"region"`
 	City    string  `json:"city"`
@@ -23,11 +23,11 @@ type Result struct {
 }
 
 var (
-	once sync.Once
-	db   *geoip2.Reader
+	geoOnce sync.Once
+	geoDB   *geoip2.Reader
 )
 
-func dbPath() string {
+func geoDBPath() string {
 	if v := os.Getenv("GEO_DB_PATH"); v != "" {
 		return v
 	}
@@ -39,8 +39,8 @@ func dbPath() string {
 	return ""
 }
 
-func openDB() {
-	path := dbPath()
+func openGeoDB() {
+	path := geoDBPath()
 	if path == "" {
 		return
 	}
@@ -50,7 +50,7 @@ func openDB() {
 		log.Printf("[geo] 打开 GeoIP 数据库失败 %s: %v", path, err)
 		return
 	}
-	db = r
+	geoDB = r
 }
 
 func isPrivate(ip net.IP) bool {
@@ -58,23 +58,23 @@ func isPrivate(ip net.IP) bool {
 }
 
 // Lookup 解析 IP 对应的地理位置。geoip2.Reader 并发安全，无需额外加锁。
-func Lookup(ipStr string) Result {
+func Lookup(ipStr string) GeoResult {
 	ip := net.ParseIP(strings.TrimSpace(ipStr))
 	if ip == nil {
-		return Result{Country: "未知"}
+		return GeoResult{Country: "未知"}
 	}
 	if isPrivate(ip) {
-		return Result{Country: "内网"}
+		return GeoResult{Country: "内网"}
 	}
-	once.Do(openDB)
-	if db == nil {
-		return Result{Country: "未知"}
+	geoOnce.Do(openGeoDB)
+	if geoDB == nil {
+		return GeoResult{Country: "未知"}
 	}
-	rec, err := db.City(ip)
+	rec, err := geoDB.City(ip)
 	if err != nil {
-		return Result{Country: "未知"}
+		return GeoResult{Country: "未知"}
 	}
-	r := Result{
+	r := GeoResult{
 		Country: firstNonEmpty(rec.Country.Names["zh-CN"], rec.Country.Names["en"], rec.Country.IsoCode),
 		Region:  firstNonEmpty(subName(rec, 0)),
 		City:    firstNonEmpty(subName(rec, 1), rec.City.Names["zh-CN"], rec.City.Names["en"]),

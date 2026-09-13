@@ -1,22 +1,22 @@
+// ShortLinkGo 服务入口。
 package main
 
 import (
 	"log"
 
-	"ShortLinkGo/config"
-	"ShortLinkGo/database"
-	"ShortLinkGo/router"
+	"ShortLinkGo/server/api"
+	"ShortLinkGo/server/app"
 )
 
 func main() {
-	cfg := config.Load()
+	cfg := app.Load()
 
-	db, err := database.Init(cfg.DBPath)
+	db, err := app.Init(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
 
-	r := router.New(cfg, db)
+	r := api.New(cfg, db)
 
 	addr := ":" + cfg.Port
 	log.Printf("服务已启动，监听 %s", addr)

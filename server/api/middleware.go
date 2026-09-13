@@ -1,13 +1,13 @@
-// Package middleware 提供 Gin 中间件。
-package middleware
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // Auth 统一鉴权：接受 JWT（Authorization: Bearer <jwt>）或 API Token（Bearer <token>）。

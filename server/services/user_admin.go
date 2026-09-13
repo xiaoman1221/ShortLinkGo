@@ -3,19 +3,17 @@ package services
 import (
 	"errors"
 	"strings"
-
-	"ShortLinkGo/models"
 )
 
 // ListUsers 分页列出用户（管理员/超级管理员）。
-func (s *AuthService) ListUsers(page, pageSize int, keyword string) ([]models.User, int64, error) {
+func (s *AuthService) ListUsers(page, pageSize int, keyword string) ([]User, int64, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
-	q := s.DB.Model(&models.User{})
+	q := s.DB.Model(&User{})
 	if kw := strings.TrimSpace(keyword); kw != "" {
 		like := "%" + kw + "%"
 		q = q.Where("username LIKE ? OR nickname LIKE ? OR email LIKE ?", like, like, like)
@@ -24,7 +22,7 @@ func (s *AuthService) ListUsers(page, pageSize int, keyword string) ([]models.Us
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var list []models.User
+	var list []User
 	err := q.Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error
 	return list, total, err
 }
@@ -39,11 +37,11 @@ func (s *AuthService) SetUserRole(id uint, role string) error {
 	if id == 1 {
 		return errors.New("不能修改超级管理员的角色")
 	}
-	var u models.User
+	var u User
 	if err := s.DB.First(&u, id).Error; err != nil {
 		return errors.New("用户不存在")
 	}
-	return s.DB.Model(&models.User{}).Where("id = ?", id).UpdateColumn("role", role).Error
+	return s.DB.Model(&User{}).Where("id = ?", id).UpdateColumn("role", role).Error
 }
 
 // SetUserStatus 设置用户状态（封禁/解封；仅超级管理员；超级管理员不可被封禁）。
@@ -54,9 +52,9 @@ func (s *AuthService) SetUserStatus(id uint, status int) error {
 	if id == 1 {
 		return errors.New("不能封禁超级管理员")
 	}
-	var u models.User
+	var u User
 	if err := s.DB.First(&u, id).Error; err != nil {
 		return errors.New("用户不存在")
 	}
-	return s.DB.Model(&models.User{}).Where("id = ?", id).UpdateColumn("status", status).Error
+	return s.DB.Model(&User{}).Where("id = ?", id).UpdateColumn("status", status).Error
 }

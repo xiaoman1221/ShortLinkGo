@@ -1,5 +1,5 @@
-// Package models 定义数据模型。
-package models
+// Package services 封装业务逻辑与数据模型。
+package services
 
 import "time"
 

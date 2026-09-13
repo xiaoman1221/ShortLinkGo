@@ -11,8 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"ShortLinkGo/geo"
-	"ShortLinkGo/models"
+	"ShortLinkGo/server/utils"
 )
 
 // codeAlphabet 短码字符集（去除易混淆字符 0/O/1/l/I）。
@@ -45,14 +44,14 @@ func NewLinkService(db *gorm.DB) *LinkService {
 }
 
 // List 分页查询短链接：管理员/超级管理员可见全部，普通用户仅本人。
-func (s *LinkService) List(userID uint, role string, page, pageSize int) ([]models.Link, int64, error) {
+func (s *LinkService) List(userID uint, role string, page, pageSize int) ([]Link, int64, error) {
 	if page < 1 {
 		page = 1
 	}
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
-	q := s.DB.Model(&models.Link{})
+	q := s.DB.Model(&Link{})
 	if !IsStaff(role) {
 		q = q.Where("user_id = ?", userID)
 	}
@@ -60,14 +59,14 @@ func (s *LinkService) List(userID uint, role string, page, pageSize int) ([]mode
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var list []models.Link
+	var list []Link
 	err := q.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list).Error
 	return list, total, err
 }
 
 // Get 查询一条短链接：管理员可查任意，普通用户仅本人。
-func (s *LinkService) Get(id, userID uint, role string) (*models.Link, error) {
-	var l models.Link
+func (s *LinkService) Get(id, userID uint, role string) (*Link, error) {
+	var l Link
 	q := s.DB.Where("id = ?", id)
 	if !IsStaff(role) {
 		q = q.Where("user_id = ?", userID)
@@ -82,8 +81,8 @@ func (s *LinkService) Get(id, userID uint, role string) (*models.Link, error) {
 }
 
 // GetByCode 查询某短码对应的短链接（任意用户，公开访问用）。
-func (s *LinkService) GetByCode(code string) (*models.Link, error) {
-	var l models.Link
+func (s *LinkService) GetByCode(code string) (*Link, error) {
+	var l Link
 	if err := s.DB.Where("code = ?", code).First(&l).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("短链接不存在")
@@ -95,7 +94,7 @@ func (s *LinkService) GetByCode(code string) (*models.Link, error) {
 
 // Create 创建短链接；code 为空时自动生成唯一短码。
 // 普通用户新建链接默认「待审核」，管理员/超级管理员直接启用。
-func (s *LinkService) Create(userID uint, role, rawURL, remark, code string, expireAt *time.Time) (*models.Link, error) {
+func (s *LinkService) Create(userID uint, role, rawURL, remark, code string, expireAt *time.Time) (*Link, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return nil, errors.New("目标链接不能为空")
@@ -111,7 +110,7 @@ func (s *LinkService) Create(userID uint, role, rawURL, remark, code string, exp
 	if IsStaff(role) {
 		status = LinkStatusActive
 	}
-	link := &models.Link{
+	link := &Link{
 		UserID:   userID,
 		URL:      rawURL,
 		Remark:   strings.TrimSpace(remark),
@@ -158,7 +157,7 @@ func (s *LinkService) Create(userID uint, role, rawURL, remark, code string, exp
 }
 
 // Review 审核短链接：设置状态（通过=1/停用=0/待审核=2）。
-func (s *LinkService) Review(id, userID uint, role string, status int) (*models.Link, error) {
+func (s *LinkService) Review(id, userID uint, role string, status int) (*Link, error) {
 	if status != LinkStatusActive && status != LinkStatusDisabled && status != LinkStatusPending {
 		return nil, errors.New("无效的状态")
 	}
@@ -169,7 +168,7 @@ func (s *LinkService) Review(id, userID uint, role string, status int) (*models.
 	if err != nil {
 		return nil, err
 	}
-	if err := s.DB.Model(&models.Link{}).Where("id = ?", l.ID).UpdateColumn("status", status).Error; err != nil {
+	if err := s.DB.Model(&Link{}).Where("id = ?", l.ID).UpdateColumn("status", status).Error; err != nil {
 		return nil, err
 	}
 	l.Status = status
@@ -178,7 +177,7 @@ func (s *LinkService) Review(id, userID uint, role string, status int) (*models.
 
 func (s *LinkService) codeExists(code string) (bool, error) {
 	var count int64
-	err := s.DB.Model(&models.Link{}).Where("code = ?", code).Count(&count).Error
+	err := s.DB.Model(&Link{}).Where("code = ?", code).Count(&count).Error
 	return count > 0, err
 }
 
@@ -192,7 +191,7 @@ type UpdateReq struct {
 }
 
 // Update 更新短链接：管理员可更新任意，普通用户仅本人。
-func (s *LinkService) Update(id, userID uint, role string, req UpdateReq) (*models.Link, error) {
+func (s *LinkService) Update(id, userID uint, role string, req UpdateReq) (*Link, error) {
 	l, err := s.Get(id, userID, role)
 	if err != nil {
 		return nil, err
@@ -240,20 +239,20 @@ func (s *LinkService) Delete(id, userID uint, role string) error {
 		if !IsStaff(role) {
 			q = q.Where("user_id = ?", userID)
 		}
-		res := q.Delete(&models.Link{})
+		res := q.Delete(&Link{})
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return errors.New("短链接不存在")
 		}
-		return tx.Where("link_id = ?", id).Delete(&models.VisitLog{}).Error
+		return tx.Where("link_id = ?", id).Delete(&VisitLog{}).Error
 	})
 }
 
 // Resolve 根据短码解析目标链接，并累计访问次数、记录访问日志（含地理位置）。
 func (s *LinkService) Resolve(code, ip, userAgent, referer string) (string, error) {
-	var l models.Link
+	var l Link
 	err := s.DB.Where("code = ?", code).First(&l).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -271,12 +270,12 @@ func (s *LinkService) Resolve(code, ip, userAgent, referer string) (string, erro
 		return "", errors.New("短链接已过期")
 	}
 
-	if err := s.DB.Model(&models.Link{}).Where("id = ?", l.ID).
+	if err := s.DB.Model(&Link{}).Where("id = ?", l.ID).
 		UpdateColumn("visit_count", gorm.Expr("visit_count + 1")).Error; err != nil {
 		return "", err
 	}
-	g := geo.Lookup(ip)
-	if err := s.DB.Create(&models.VisitLog{
+	g := utils.Lookup(ip)
+	if err := s.DB.Create(&VisitLog{
 		LinkID:    l.ID,
 		IP:        cut(ip, 64),
 		Country:   cut(g.Country, 64),
@@ -295,7 +294,7 @@ func (s *LinkService) Resolve(code, ip, userAgent, referer string) (string, erro
 
 // Summary 统计概览。
 func (s *LinkService) Summary(userID uint, role string) (map[string]int64, error) {
-	q := s.DB.Model(&models.Link{})
+	q := s.DB.Model(&Link{})
 	if !IsStaff(role) {
 		q = q.Where("user_id = ?", userID)
 	}
@@ -313,7 +312,7 @@ func (s *LinkService) Summary(userID uint, role string) (map[string]int64, error
 		return nil, err
 	}
 	var totalVisits int64
-	vq := s.DB.Model(&models.Link{}).Select("COALESCE(SUM(visit_count), 0)")
+	vq := s.DB.Model(&Link{}).Select("COALESCE(SUM(visit_count), 0)")
 	if !IsStaff(role) {
 		vq = vq.Where("user_id = ?", userID)
 	}
@@ -371,15 +370,15 @@ func (s *LinkService) Trend(userID uint, role string, days int) ([]map[string]in
 }
 
 // Top 返回访问量最高的短链接。
-func (s *LinkService) Top(userID uint, role string, limit int) ([]models.Link, error) {
+func (s *LinkService) Top(userID uint, role string, limit int) ([]Link, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 5
 	}
-	q := s.DB.Model(&models.Link{})
+	q := s.DB.Model(&Link{})
 	if !IsStaff(role) {
 		q = q.Where("user_id = ?", userID)
 	}
-	var list []models.Link
+	var list []Link
 	err := q.Order("visit_count DESC, id ASC").Limit(limit).Find(&list).Error
 	return list, err
 }

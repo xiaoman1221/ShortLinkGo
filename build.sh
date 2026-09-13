@@ -7,6 +7,6 @@ echo "==> 构建前端 web/dist"
 (cd web && npm install && npm run build)
 
 echo "==> 构建后端 shortlinkgo"
-go build -trimpath -ldflags "-s -w" -o shortlinkgo .
+go build -trimpath -ldflags "-s -w" -o shortlinkgo ./server
 
 echo "构建完成：./shortlinkgo"

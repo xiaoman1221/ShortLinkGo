@@ -1,12 +1,13 @@
-package handlers
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // UserAdminHandler 用户管理（管理员查看，超级管理员修改角色/封禁）。

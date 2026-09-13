@@ -9,8 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"ShortLinkGo/models"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/utils"
 )
 
 // 角色与状态常量。
@@ -45,7 +44,7 @@ func NewAuthService(db *gorm.DB, jwtKey string, ttl time.Duration) *AuthService 
 
 // Register 注册新用户。首个注册用户自动成为超级管理员（UID=1）。
 // 查重与创建放在同一事务内，配合 users(email) 部分唯一索引防止并发下重复注册。
-func (s *AuthService) Register(username, password, nickname, email string) (*models.User, error) {
+func (s *AuthService) Register(username, password, nickname, email string) (*User, error) {
 	username = strings.TrimSpace(username)
 	email = strings.TrimSpace(email)
 	if username == "" || password == "" {
@@ -64,7 +63,7 @@ func (s *AuthService) Register(username, password, nickname, email string) (*mod
 	if err != nil {
 		return nil, err
 	}
-	u := &models.User{
+	u := &User{
 		Username:     username,
 		PasswordHash: hash,
 		Nickname:     strings.TrimSpace(nickname),
@@ -76,13 +75,13 @@ func (s *AuthService) Register(username, password, nickname, email string) (*mod
 	}
 	err = s.DB.Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&models.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
+		if err := tx.Model(&User{}).Where("username = ?", username).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
 			return errors.New("用户名已存在")
 		}
-		if err := tx.Model(&models.User{}).Where("email = ?", email).Count(&count).Error; err != nil {
+		if err := tx.Model(&User{}).Where("email = ?", email).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -90,7 +89,7 @@ func (s *AuthService) Register(username, password, nickname, email string) (*mod
 		}
 		// 首个用户为超级管理员
 		var total int64
-		if err := tx.Model(&models.User{}).Count(&total).Error; err != nil {
+		if err := tx.Model(&User{}).Count(&total).Error; err != nil {
 			return err
 		}
 		u.Role = RoleUser
@@ -113,8 +112,8 @@ func (s *AuthService) Register(username, password, nickname, email string) (*mod
 }
 
 // Login 登录校验，成功返回 JWT 与用户信息。
-func (s *AuthService) Login(username, password string) (string, *models.User, error) {
-	var u models.User
+func (s *AuthService) Login(username, password string) (string, *User, error) {
+	var u User
 	err := s.DB.Where("username = ?", strings.TrimSpace(username)).First(&u).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -136,8 +135,8 @@ func (s *AuthService) Login(username, password string) (string, *models.User, er
 }
 
 // GetByID 按 ID 查询用户。
-func (s *AuthService) GetByID(id uint) (*models.User, error) {
-	var u models.User
+func (s *AuthService) GetByID(id uint) (*User, error) {
+	var u User
 	if err := s.DB.First(&u, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("用户不存在")
@@ -148,12 +147,12 @@ func (s *AuthService) GetByID(id uint) (*models.User, error) {
 }
 
 // FindByEmail 按邮箱查找用户；未找到时返回 (nil, nil)。
-func (s *AuthService) FindByEmail(email string) (*models.User, error) {
+func (s *AuthService) FindByEmail(email string) (*User, error) {
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return nil, nil
 	}
-	var u models.User
+	var u User
 	err := s.DB.Where("email = ?", email).First(&u).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -165,7 +164,7 @@ func (s *AuthService) FindByEmail(email string) (*models.User, error) {
 }
 
 // UpdateProfile 更新个人资料（昵称/邮箱/手机号/头像），用户名不可修改。
-func (s *AuthService) UpdateProfile(id uint, nickname, email, phone, avatar string) (*models.User, error) {
+func (s *AuthService) UpdateProfile(id uint, nickname, email, phone, avatar string) (*User, error) {
 	u, err := s.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -176,7 +175,7 @@ func (s *AuthService) UpdateProfile(id uint, nickname, email, phone, avatar stri
 			return nil, errors.New("邮箱格式不正确")
 		}
 		var count int64
-		if err := s.DB.Model(&models.User{}).
+		if err := s.DB.Model(&User{}).
 			Where("email = ? AND id <> ?", email, id).Count(&count).Error; err != nil {
 			return nil, err
 		}
@@ -216,31 +215,31 @@ func (s *AuthService) ChangePassword(id uint, oldPwd, newPwd string) error {
 	if err != nil {
 		return err
 	}
-	return s.DB.Model(&models.User{}).Where("id = ?", id).UpdateColumn("password_hash", hash).Error
+	return s.DB.Model(&User{}).Where("id = ?", id).UpdateColumn("password_hash", hash).Error
 }
 
 // SetAvatar 更新头像。
-func (s *AuthService) SetAvatar(id uint, avatar string) (*models.User, error) {
-	if err := s.DB.Model(&models.User{}).Where("id = ?", id).UpdateColumn("avatar", avatar).Error; err != nil {
+func (s *AuthService) SetAvatar(id uint, avatar string) (*User, error) {
+	if err := s.DB.Model(&User{}).Where("id = ?", id).UpdateColumn("avatar", avatar).Error; err != nil {
 		return nil, err
 	}
 	return s.GetByID(id)
 }
 
 // FindOrCreateByQQ 通过 QQ openid 查找或创建本地账号。
-func (s *AuthService) FindOrCreateByQQ(openid, nickname, avatar string) (*models.User, error) {
+func (s *AuthService) FindOrCreateByQQ(openid, nickname, avatar string) (*User, error) {
 	openid = strings.TrimSpace(openid)
 	if openid == "" {
 		return nil, errors.New("QQ openid 为空")
 	}
-	var u models.User
+	var u User
 	err := s.DB.Where("qq_openid = ?", openid).First(&u).Error
 	if err == nil {
 		if u.Status != StatusOK {
 			return nil, errors.New("账号已被封禁")
 		}
 		if avatar != "" && u.Avatar == "" {
-			s.DB.Model(&models.User{}).Where("id = ?", u.ID).UpdateColumn("avatar", avatar)
+			s.DB.Model(&User{}).Where("id = ?", u.ID).UpdateColumn("avatar", avatar)
 		}
 		return &u, nil
 	}
@@ -248,7 +247,7 @@ func (s *AuthService) FindOrCreateByQQ(openid, nickname, avatar string) (*models
 		return nil, err
 	}
 	var total int64
-	if err := s.DB.Model(&models.User{}).Count(&total).Error; err != nil {
+	if err := s.DB.Model(&User{}).Count(&total).Error; err != nil {
 		return nil, err
 	}
 	role := RoleUser
@@ -259,7 +258,7 @@ func (s *AuthService) FindOrCreateByQQ(openid, nickname, avatar string) (*models
 		// openid 长度不保证 ≥ 8，安全截断避免切片越界
 		nickname = "QQ用户" + openid[:min(8, len(openid))]
 	}
-	u = models.User{
+	u = User{
 		Username: "qq_" + openid,
 		Nickname: cut(nickname, 32),
 		Avatar:   avatar,
@@ -278,12 +277,12 @@ func (s *AuthService) CreateResetToken(userID uint) (string, error) {
 	token := utils.RandomHex(24)
 	hash := utils.HashToken(token)
 	now := time.Now()
-	if err := s.DB.Model(&models.PasswordReset{}).
+	if err := s.DB.Model(&PasswordReset{}).
 		Where("user_id = ? AND used = ?", userID, false).
 		Updates(map[string]interface{}{"used": true}).Error; err != nil {
 		return "", err
 	}
-	rec := &models.PasswordReset{
+	rec := &PasswordReset{
 		UserID:    userID,
 		TokenHash: hash,
 		ExpiresAt: now.Add(30 * time.Minute),
@@ -303,7 +302,7 @@ func (s *AuthService) ResetPassword(token, newPwd string) error {
 	if token == "" {
 		return errors.New("重置令牌无效")
 	}
-	var rec models.PasswordReset
+	var rec PasswordReset
 	err := s.DB.Where("token_hash = ? AND used = ?", utils.HashToken(token), false).First(&rec).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -318,9 +317,9 @@ func (s *AuthService) ResetPassword(token, newPwd string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.DB.Model(&models.User{}).Where("id = ?", rec.UserID).
+	if err := s.DB.Model(&User{}).Where("id = ?", rec.UserID).
 		UpdateColumn("password_hash", hash).Error; err != nil {
 		return err
 	}
-	return s.DB.Model(&models.PasswordReset{}).Where("id = ?", rec.ID).UpdateColumn("used", true).Error
+	return s.DB.Model(&PasswordReset{}).Where("id = ?", rec.ID).UpdateColumn("used", true).Error
 }

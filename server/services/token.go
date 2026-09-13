@@ -7,8 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"ShortLinkGo/models"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/utils"
 )
 
 // TokenService API 令牌服务。
@@ -22,7 +21,7 @@ func NewTokenService(db *gorm.DB) *TokenService {
 }
 
 // Create 为用户创建一枚 API 令牌，返回明文（仅此一次）。
-func (s *TokenService) Create(userID uint, name string) (string, *models.ApiToken, error) {
+func (s *TokenService) Create(userID uint, name string) (string, *ApiToken, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", nil, errors.New("令牌名称不能为空")
@@ -31,7 +30,7 @@ func (s *TokenService) Create(userID uint, name string) (string, *models.ApiToke
 		return "", nil, errors.New("令牌名称过长")
 	}
 	plain := "slg_" + utils.RandomHex(20)
-	t := &models.ApiToken{
+	t := &ApiToken{
 		UserID:    userID,
 		Name:      name,
 		TokenHash: utils.HashToken(plain),
@@ -43,15 +42,15 @@ func (s *TokenService) Create(userID uint, name string) (string, *models.ApiToke
 }
 
 // List 列出用户的令牌（不返回哈希）。
-func (s *TokenService) List(userID uint) ([]models.ApiToken, error) {
-	var list []models.ApiToken
+func (s *TokenService) List(userID uint) ([]ApiToken, error) {
+	var list []ApiToken
 	err := s.DB.Where("user_id = ?", userID).Order("id DESC").Find(&list).Error
 	return list, err
 }
 
 // Delete 删除令牌。
 func (s *TokenService) Delete(userID, id uint) error {
-	res := s.DB.Where("id = ? AND user_id = ?", id, userID).Delete(&models.ApiToken{})
+	res := s.DB.Where("id = ? AND user_id = ?", id, userID).Delete(&ApiToken{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -62,8 +61,8 @@ func (s *TokenService) Delete(userID, id uint) error {
 }
 
 // UserByID 以 ID 获取用户（校验封禁状态），用于 JWT 请求时实时读取角色/状态。
-func (s *TokenService) UserByID(id uint) (*models.User, error) {
-	var u models.User
+func (s *TokenService) UserByID(id uint) (*User, error) {
+	var u User
 	if err := s.DB.First(&u, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -77,12 +76,12 @@ func (s *TokenService) UserByID(id uint) (*models.User, error) {
 }
 
 // AuthByToken 用明文令牌换取用户；失败返回 nil。
-func (s *TokenService) AuthByToken(plain string) (*models.User, error) {
+func (s *TokenService) AuthByToken(plain string) (*User, error) {
 	plain = strings.TrimSpace(plain)
 	if plain == "" {
 		return nil, nil
 	}
-	var t models.ApiToken
+	var t ApiToken
 	err := s.DB.Where("token_hash = ?", utils.HashToken(plain)).First(&t).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -90,7 +89,7 @@ func (s *TokenService) AuthByToken(plain string) (*models.User, error) {
 		}
 		return nil, err
 	}
-	var u models.User
+	var u User
 	if err := s.DB.First(&u, t.UserID).Error; err != nil {
 		return nil, nil
 	}
@@ -98,6 +97,6 @@ func (s *TokenService) AuthByToken(plain string) (*models.User, error) {
 		return nil, errors.New("账号已被封禁")
 	}
 	now := time.Now()
-	s.DB.Model(&models.ApiToken{}).Where("id = ?", t.ID).UpdateColumn("last_used_at", &now)
+	s.DB.Model(&ApiToken{}).Where("id = ?", t.ID).UpdateColumn("last_used_at", &now)
 	return &u, nil
 }

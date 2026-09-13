@@ -1,10 +1,11 @@
-package handlers
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // SettingsHandler 系统设置接口（仅管理员）。

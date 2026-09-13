@@ -1,5 +1,5 @@
-// Package router 定义路由。
-package router
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"log"
@@ -11,15 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"ShortLinkGo/config"
-	"ShortLinkGo/handlers"
-	"ShortLinkGo/middleware"
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/app"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // New 组装 Gin 引擎与全部路由。
-func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
+func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 	if cfg.GinMode != "" {
 		gin.SetMode(cfg.GinMode)
 	}
@@ -36,16 +34,16 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	settingSvc := services.NewSettingService(db)
 	tokenSvc := services.NewTokenService(db)
 
-	authH := &handlers.AuthHandler{
+	authH := &AuthHandler{
 		Svc:      authSvc,
 		Settings: settingSvc,
 		Debug:    cfg.GinMode == "debug",
 		BaseHost: cfg.Host,
 	}
-	linkH := &handlers.LinkHandler{Svc: linkSvc, Host: cfg.Host}
-	settingH := &handlers.SettingsHandler{Svc: settingSvc}
-	tokenH := &handlers.TokenHandler{Svc: tokenSvc}
-	userAdminH := &handlers.UserAdminHandler{Svc: authSvc}
+	linkH := &LinkHandler{Svc: linkSvc, Host: cfg.Host}
+	settingH := &SettingsHandler{Svc: settingSvc}
+	tokenH := &TokenHandler{Svc: tokenSvc}
+	userAdminH := &UserAdminHandler{Svc: authSvc}
 
 	// 健康检查
 	r.GET("/api/health", func(c *gin.Context) {
@@ -70,7 +68,7 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		auth.GET("/qq", authH.QQAuthorize)
 		auth.GET("/qq/callback", authH.QQCallback)
 
-		authed := auth.Group("", middleware.Auth(cfg.JWTKey, tokenSvc))
+		authed := auth.Group("", Auth(cfg.JWTKey, tokenSvc))
 		authed.GET("/profile", authH.Profile)
 		authed.PUT("/profile", authH.UpdateProfile)
 		authed.PUT("/password", authH.ChangePassword)
@@ -78,9 +76,9 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	}
 
 	// 需登录：链接 / 统计 / 令牌
-	api := r.Group("/api", middleware.Auth(cfg.JWTKey, tokenSvc))
+	apiGroup := r.Group("/api", Auth(cfg.JWTKey, tokenSvc))
 	{
-		links := api.Group("/links")
+		links := apiGroup.Group("/links")
 		{
 			links.GET("", linkH.List)
 			links.POST("", linkH.Create)
@@ -89,14 +87,14 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 			links.POST("/:id/review", linkH.Review)
 			links.DELETE("/:id", linkH.Delete)
 		}
-		stats := api.Group("/stats")
+		stats := apiGroup.Group("/stats")
 		{
 			stats.GET("/summary", linkH.Summary)
 			stats.GET("/trend", linkH.Trend)
 			stats.GET("/top", linkH.Top)
 			stats.GET("/geo", linkH.Geo)
 		}
-		tokens := api.Group("/tokens")
+		tokens := apiGroup.Group("/tokens")
 		{
 			tokens.GET("", tokenH.List)
 			tokens.POST("", tokenH.Create)
@@ -105,16 +103,16 @@ func New(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	}
 
 	// 管理：用户管理（管理员可见，超级管理员可改）
-	admin := r.Group("/api/admin", middleware.Auth(cfg.JWTKey, tokenSvc), middleware.AdminOnly())
+	admin := r.Group("/api/admin", Auth(cfg.JWTKey, tokenSvc), AdminOnly())
 	{
 		admin.GET("/users", userAdminH.List)
-		super := admin.Group("", middleware.SuperOnly())
+		super := admin.Group("", SuperOnly())
 		super.PUT("/users/:id/role", userAdminH.SetRole)
 		super.PUT("/users/:id/status", userAdminH.SetStatus)
 	}
 
 	// 系统设置（管理员/超级管理员）
-	settings := r.Group("/api/settings", middleware.Auth(cfg.JWTKey, tokenSvc), middleware.AdminOnly())
+	settings := r.Group("/api/settings", Auth(cfg.JWTKey, tokenSvc), AdminOnly())
 	{
 		settings.GET("", settingH.List)
 		settings.PUT("", settingH.Update)

@@ -1,4 +1,5 @@
-package handlers
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"errors"
@@ -11,7 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/utils"
 )
 
 // uploadRoot 上传文件根目录（通过 /uploads 静态服务）。

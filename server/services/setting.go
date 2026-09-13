@@ -7,8 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"ShortLinkGo/models"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/utils"
 )
 
 // allowedSettingKeys 允许通过接口修改的系统设置键。
@@ -40,7 +39,7 @@ func NewSettingService(db *gorm.DB) *SettingService {
 
 // All 返回全部设置（用于管理端展示；密码类单独处理）。
 func (s *SettingService) All() (map[string]string, error) {
-	var rows []models.Setting
+	var rows []Setting
 	if err := s.DB.Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -62,13 +61,13 @@ func (s *SettingService) Set(key, value string) error {
 		}
 	}
 	var count int64
-	if err := s.DB.Model(&models.Setting{}).Where("key = ?", key).Count(&count).Error; err != nil {
+	if err := s.DB.Model(&Setting{}).Where("key = ?", key).Count(&count).Error; err != nil {
 		return err
 	}
 	if count == 0 {
-		return s.DB.Create(&models.Setting{Key: key, Value: strings.TrimSpace(value)}).Error
+		return s.DB.Create(&Setting{Key: key, Value: strings.TrimSpace(value)}).Error
 	}
-	return s.DB.Model(&models.Setting{}).Where("key = ?", key).UpdateColumn("value", value).Error
+	return s.DB.Model(&Setting{}).Where("key = ?", key).UpdateColumn("value", value).Error
 }
 
 // Site 返回对前端公开的站点信息（名称/Logo/简介）。

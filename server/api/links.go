@@ -1,4 +1,5 @@
-package handlers
+// Package api 组装 HTTP 层：路由、处理器与鉴权中间件。
+package api
 
 import (
 	"net/http"
@@ -8,9 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ShortLinkGo/models"
-	"ShortLinkGo/services"
-	"ShortLinkGo/utils"
+	"ShortLinkGo/server/services"
+	"ShortLinkGo/server/utils"
 )
 
 // LinkHandler 短链接相关接口。
@@ -21,12 +21,12 @@ type LinkHandler struct {
 
 // linkVO 返回给前端的视图对象（附带 short_url 与创建者）。
 type linkVO struct {
-	models.Link
+	services.Link
 	ShortURL  string `json:"short_url"`
 	OwnerName string `json:"owner_name,omitempty"`
 }
 
-func (h *LinkHandler) toVO(l *models.Link) linkVO {
+func (h *LinkHandler) toVO(l *services.Link) linkVO {
 	return linkVO{Link: *l, ShortURL: h.shortURL(l.Code)}
 }
 
@@ -86,7 +86,7 @@ func (h *LinkHandler) List(c *gin.Context) {
 	utils.OK(c, gin.H{"list": vos, "total": total, "page": page, "page_size": pageSize})
 }
 
-func (h *LinkHandler) ownerNames(links []models.Link) map[uint]string {
+func (h *LinkHandler) ownerNames(links []services.Link) map[uint]string {
 	ids := make([]uint, 0, len(links))
 	seen := map[uint]bool{}
 	for _, l := range links {
@@ -98,7 +98,7 @@ func (h *LinkHandler) ownerNames(links []models.Link) map[uint]string {
 	if len(ids) == 0 {
 		return map[uint]string{}
 	}
-	var users []models.User
+	var users []services.User
 	if err := h.Svc.DB.Where("id IN ?", ids).Find(&users).Error; err != nil {
 		return map[uint]string{}
 	}
