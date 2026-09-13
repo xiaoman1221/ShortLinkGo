@@ -118,7 +118,7 @@
               <span class="top-rank num">{{ String(i + 1).padStart(2, '0') }}</span>
               <div class="top-main">
                 <span class="top-code">{{ t.ip }}</span>
-                <span class="top-url">{{ t.country }}</span>
+                <span class="top-url">{{ t.location || t.country }}</span>
               </div>
               <span class="top-visits num">{{ t.count }} 次</span>
             </li>

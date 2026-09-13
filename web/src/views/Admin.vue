@@ -232,6 +232,18 @@
             <button class="btn btn-ghost" type="button" :disabled="bfForm.geoip_api_enabled !== true" @click="triggerBackfill">立即回填</button>
           </div>
         </form>
+        <div class="test-box">
+          <p class="eyebrow">测试 · Test</p>
+          <div class="token-create" style="margin-top: 14px">
+            <input v-model="apiTestIP" class="text-input" type="text" placeholder="测试 IP（默认 8.8.8.8）" />
+            <button class="btn btn-ghost btn-sm" type="button" :disabled="testingAPI" @click="testGeoAPI">{{ testingAPI ? '查询中…' : '测试查询' }}</button>
+          </div>
+          <p v-if="apiTestResult" class="hint" :class="apiTestResult.success ? '' : 'danger-text'">
+            {{ apiTestResult.success
+              ? `[${apiTestResult.provider}] ${apiTestResult.ip} → ${apiTestResult.country}${apiTestResult.region ? ' · ' + apiTestResult.region : ''}${apiTestResult.city ? ' · ' + apiTestResult.city : ''}（${apiTestResult.elapsed_ms}ms）`
+              : `查询失败：${apiTestResult.error}` }}
+          </p>
+        </div>
         <dl v-if="geoStatus.backfill" class="geo-status" style="margin-top: 18px">
           <div><dt>上次运行</dt><dd>{{ geoStatus.backfill.last_run ? formatTime(geoStatus.backfill.last_run) : '—' }}</dd></div>
           <div><dt>查询 / 回填</dt><dd class="num">{{ geoStatus.backfill.last_queried }} / {{ geoStatus.backfill.last_updated }}</dd></div>
@@ -341,6 +353,9 @@ const savingIP = ref(false)
 const bfForm = reactive({ geoip_api_enabled: false, geoip_api_provider: 'pconline', geoip_api_key: '', geoip_api_url: '' })
 const bfKeySet = ref(false)
 const savingBF = ref(false)
+const apiTestIP = ref('')
+const testingAPI = ref(false)
+const apiTestResult = ref(null)
 
 const ROLE_NAMES = { super: '超级管理员', admin: '管理员', vip: 'VIP', user: '用户' }
 function roleName(r) {
@@ -583,6 +598,16 @@ async function saveBackfill() {
     }
   } finally {
     savingBF.value = false
+  }
+}
+
+async function testGeoAPI() {
+  testingAPI.value = true
+  try {
+    const res = await api.post('/api/settings/geoip/api-test', { ip: apiTestIP.value.trim() })
+    apiTestResult.value = res.data
+  } finally {
+    testingAPI.value = false
   }
 }
 

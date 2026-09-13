@@ -122,6 +122,7 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 		settings.GET("/geoip/status", settingH.GeoIPStatus)
 		settings.POST("/geoip/update", settingH.GeoIPUpdate)
 		settings.POST("/geoip/backfill", settingH.GeoIPBackfill)
+		settings.POST("/geoip/api-test", settingH.GeoIPAPITest)
 	}
 
 	// 上传文件（头像/Logo，存储于 data/uploads，容器内为数据卷 /app/data/uploads）

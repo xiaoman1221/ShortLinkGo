@@ -285,6 +285,11 @@ var geoHTTPClient = &http.Client{
 
 // queryGeoIPAPI 单条查询，按提供商分发。
 func queryGeoIPAPI(provider, key, tpl, ip string) (*geoAPIResult, error) {
+	return QueryGeoIPAPIForTest(provider, key, tpl, ip)
+}
+
+// QueryGeoIPAPIForTest 按提供商执行一次查询（管理端测试按钮与回填共用）。
+func QueryGeoIPAPIForTest(provider, key, tpl, ip string) (*geoAPIResult, error) {
 	switch provider {
 	case "pconline":
 		return queryPConline(ip)

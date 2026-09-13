@@ -76,6 +76,88 @@ func npmmirrorTarballURL(latestURL string) (string, error) {
 	return meta.Dist.Tarball, nil
 }
 
+// ip2region xdb（中国库）下载源（国内优先）与更新窗口。
+var ip2rSources = []struct{ name, url string }{
+	{"jsDelivr", "https://fastly.jsdelivr.net/gh/lionsoul2014/ip2region@master/data/ip2region_v4.xdb"},
+	{"GitHub", "https://raw.githubusercontent.com/lionsoul2014/ip2region/master/data/ip2region_v4.xdb"},
+}
+
+const ip2rRefreshInterval = 7 * 24 * time.Hour
+
+// ensureIP2RegionDB 检查并下载/更新中国库（多源回退，7 天更新窗口）。
+func ensureIP2RegionDB() {
+	fi, err := os.Stat(utils.IP2RegionPath)
+	if err == nil {
+		if time.Since(fi.ModTime()) < ip2rRefreshInterval {
+			if !utils.IP2RegionLoaded() {
+				utils.OpenIP2Region(utils.IP2RegionPath)
+			}
+			return // 新鲜且已加载
+		}
+		// 陈旧：尝试更新，失败继续用旧库
+	}
+	for _, s := range ip2rSources {
+		if err := downloadIP2RegionDB(s.url); err != nil {
+			log.Printf("[geoip] 中国库下载失败（%s）: %v", s.name, err)
+			continue
+		}
+		log.Printf("[geoip] 中国库已就绪（source=%s）", s.name)
+		return
+	}
+	if fi != nil {
+		log.Printf("[geoip] 中国库更新失败，继续使用本地旧库")
+	}
+}
+
+// downloadIP2RegionDB 下载 xdb 到临时文件，加载校验通过后原子替换。
+func downloadIP2RegionDB(dlURL string) error {
+	if err := validateDownloadURL(dlURL); err != nil {
+		return err
+	}
+	client := &http.Client{
+		Timeout: 10 * time.Minute,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("重定向次数过多")
+			}
+			return validateDownloadURL(req.URL.String())
+		},
+	}
+	req, err := http.NewRequest(http.MethodGet, dlURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "ShortLinkGo-GeoIP-Updater")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	tmp := utils.IP2RegionPath + ".tmp"
+	if err := saveLimited(resp.Body, tmp, 100<<20); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	// 加载校验通过才替换（与 mmdb 相同模式：先开新、关旧、再改名）
+	if err := utils.OpenIP2Region(tmp); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("xdb 校验失败: %v", err)
+	}
+	if err := os.Remove(utils.IP2RegionPath); err != nil && !os.IsNotExist(err) {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, utils.IP2RegionPath); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return utils.OpenIP2Region(utils.IP2RegionPath)
+}
+
 // geoIPSources 内置候选源列表（按国内可达性优先排序）。
 var geoIPSources = []geoIPSource{
 	// npmmirror（阿里云国内 CDN）分发的 @geo-mmd/geolite2-city：标准 GeoLite2-City
@@ -117,6 +199,13 @@ type GeoIPStatus struct {
 	LastError   string              `json:"last_error"`
 	Downloading bool                `json:"downloading"`
 	Backfill    GeoIPBackfillStatus `json:"backfill"`
+	CNDB        GeoIPCNDBStatus     `json:"cn_db"`
+}
+
+// GeoIPCNDBStatus 中国库（ip2region xdb）状态。
+type GeoIPCNDBStatus struct {
+	Loaded   bool  `json:"loaded"`
+	FileSize int64 `json:"file_size"`
 }
 
 // StartGeoIPUpdater 启动 GeoIP 更新协程：启动时立即检查一次，此后每小时检查一次。
@@ -171,6 +260,10 @@ func GetGeoIPStatus(db *gorm.DB) GeoIPStatus {
 		}
 	}
 	st.Loaded = utils.GeoDBLoaded()
+	if fi, err := os.Stat(utils.IP2RegionPath); err == nil {
+		st.CNDB.FileSize = fi.Size()
+	}
+	st.CNDB.Loaded = utils.IP2RegionLoaded() || st.CNDB.FileSize > 0
 	st.Backfill = GetGeoIPBackfillStatus(db)
 	return st
 }
@@ -195,6 +288,9 @@ func checkGeoIPUpdate(db *gorm.DB) {
 	if all["geoip_enabled"] != "1" {
 		return
 	}
+
+	// 顺带维护中国库（ip2region xdb）：不存在或超过 7 天则更新
+	ensureIP2RegionDB()
 
 	// 组装候选源：手动 URL 优先且唯一；否则按内置列表探测
 	key := strings.TrimSpace(all["geoip_license_key"])

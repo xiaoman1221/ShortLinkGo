@@ -2,6 +2,10 @@
 package api
 
 import (
+	"net"
+	"strings"
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"ShortLinkGo/server/services"
@@ -73,6 +77,41 @@ func (h *SettingsHandler) GeoIPBackfill(c *gin.Context) {
 		return
 	}
 	utils.OKMsg(c, "已开始后台回填，稍后可刷新状态查看结果", nil)
+}
+
+// GeoIPAPITest POST /api/settings/geoip/api-test —— 按当前兜底配置实际查询一次。
+func (h *SettingsHandler) GeoIPAPITest(c *gin.Context) {
+	var req struct {
+		IP string `json:"ip"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	req.IP = strings.TrimSpace(req.IP)
+	if req.IP == "" {
+		req.IP = "8.8.8.8"
+	}
+	if net.ParseIP(req.IP) == nil {
+		utils.BadRequest(c, "无效的测试 IP")
+		return
+	}
+	all := map[string]string{}
+	if rows, err := h.Svc.All(); err == nil {
+		all = rows
+	}
+	provider := all["geoip_api_provider"]
+	if !services.GeoIPAPIProviders[provider] {
+		provider = "pconline"
+	}
+	start := time.Now()
+	r, err := services.QueryGeoIPAPIForTest(provider, strings.TrimSpace(all["geoip_api_key"]),
+		strings.TrimSpace(all["geoip_api_url"]), req.IP)
+	if err != nil {
+		utils.OK(c, gin.H{"success": false, "provider": provider, "ip": req.IP,
+			"error": err.Error(), "elapsed_ms": time.Since(start).Milliseconds()})
+		return
+	}
+	utils.OK(c, gin.H{"success": true, "provider": provider, "ip": req.IP,
+		"country": r.Country, "region": r.Region, "city": r.City,
+		"lat": r.Lat, "lon": r.Lon, "elapsed_ms": time.Since(start).Milliseconds()})
 }
 
 // GeoIPUpdate POST /api/settings/geoip/update —— 立即触发一次检查/下载（异步执行）。

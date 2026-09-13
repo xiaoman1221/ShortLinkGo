@@ -68,7 +68,12 @@ func PublicIP(ip net.IP) bool {
 	return true
 }
 
-// Lookup 解析 IP 对应的地理位置。geoip2.Reader 并发安全，读指针加锁避免热重载竞态。
+// Lookup 分层解析 IP 地理位置：
+//  1. 中国 IP 走中国库（ip2region，城市/运营商级精度）
+//  2. 其他 IP 走世界库（GeoLite2-City）
+//  3. 世界库不可用或未命中时，回退中国库的国外结果，最后返回「未知」
+//
+// geoip2.Reader 并发安全，读指针加锁避免热重载竞态。
 func Lookup(ipStr string) GeoResult {
 	ip := net.ParseIP(strings.TrimSpace(ipStr))
 	if ip == nil {
@@ -77,24 +82,36 @@ func Lookup(ipStr string) GeoResult {
 	if isPrivate(ip) {
 		return GeoResult{Country: "内网"}
 	}
+
+	// 中国库：仅采用「中国」结果，国外交由世界库
+	cnCountry, cnRegion, cnCity, cnOK := SearchIP2Region(ipStr)
+	if cnOK {
+		return GeoResult{Country: cnCountry, Region: cnRegion, City: cnCity}
+	}
+
 	geoMu.RLock()
 	db := geoDB
 	geoMu.RUnlock()
-	if db == nil {
-		return GeoResult{Country: "未知"}
+	if db != nil {
+		if rec, err := db.City(ip); err == nil {
+			r := GeoResult{
+				Country: firstNonEmpty(rec.Country.Names["zh-CN"], rec.Country.Names["en"], rec.Country.IsoCode),
+				Region:  firstNonEmpty(subName(rec, 0)),
+				City:    firstNonEmpty(subName(rec, 1), rec.City.Names["zh-CN"], rec.City.Names["en"]),
+				Lat:     rec.Location.Latitude,
+				Lon:     rec.Location.Longitude,
+			}
+			if r.Country != "" {
+				return r
+			}
+		}
 	}
-	rec, err := db.City(ip)
-	if err != nil {
-		return GeoResult{Country: "未知"}
+
+	// 世界库不可用时回退中国库的国外结果（粗粒度但优于「未知」）
+	if cnOK {
+		return GeoResult{Country: cnCountry, Region: cnRegion, City: cnCity}
 	}
-	r := GeoResult{
-		Country: firstNonEmpty(rec.Country.Names["zh-CN"], rec.Country.Names["en"], rec.Country.IsoCode),
-		Region:  firstNonEmpty(subName(rec, 0)),
-		City:    firstNonEmpty(subName(rec, 1), rec.City.Names["zh-CN"], rec.City.Names["en"]),
-		Lat:     rec.Location.Latitude,
-		Lon:     rec.Location.Longitude,
-	}
-	return r
+	return GeoResult{Country: "未知"}
 }
 
 func subName(rec *geoip2.City, i int) string {

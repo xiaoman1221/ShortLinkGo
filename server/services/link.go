@@ -403,7 +403,10 @@ func (s *LinkService) TopIPs(userID uint, role string, limit int) ([]map[string]
 	if limit <= 0 || limit > 20 {
 		limit = 5
 	}
-	q := `SELECT ip, COALESCE(NULLIF(country,''), '未知') AS country, COUNT(*) AS cnt
+	q := `SELECT ip, COALESCE(NULLIF(country,''), '未知') AS country,
+		COALESCE(NULLIF(MAX(region),''), '') AS region,
+		COALESCE(NULLIF(MAX(city),''), '') AS city,
+		COUNT(*) AS cnt
 		FROM visit_logs WHERE 1=1`
 	args := []interface{}{}
 	if !IsStaff(role) {
@@ -415,6 +418,8 @@ func (s *LinkService) TopIPs(userID uint, role string, limit int) ([]map[string]
 	type row struct {
 		IP      string
 		Country string
+		Region  string
+		City    string
 		Cnt     int64
 	}
 	var rows []row
@@ -423,7 +428,17 @@ func (s *LinkService) TopIPs(userID uint, role string, limit int) ([]map[string]
 	}
 	out := make([]map[string]interface{}, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, map[string]interface{}{"ip": r.IP, "country": r.Country, "count": r.Cnt})
+		loc := r.Country
+		if r.Region != "" {
+			loc += " · " + r.Region
+		}
+		if r.City != "" && r.City != r.Region {
+			loc += " · " + r.City
+		}
+		out = append(out, map[string]interface{}{
+			"ip": r.IP, "country": r.Country, "region": r.Region,
+			"city": r.City, "location": loc, "count": r.Cnt,
+		})
 	}
 	return out, nil
 }
