@@ -1,17 +1,18 @@
 // Package utils 提供通用工具：统一响应、密码哈希、JWT、邮件发送、IP 地理位置解析。
-// 地理解析数据源：可选的 MaxMind GeoLite2-City.mmdb（可通过 GEO_DB_PATH 指定，
-// 或放在 ./data/GeoLite2-City.mmdb）。未配置数据文件时，仅区分内网/公网。
+// 地理解析数据源：MaxMind GeoLite2-City.mmdb，固定存放于 GeoDBPath，
+// 由 services 包的 GeoIP 更新器负责下载与每小时更新，全部配置在网页「系统管理」完成。
 package utils
 
 import (
-	"log"
 	"net"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/oschwald/geoip2-golang"
 )
+
+// GeoDBPath GeoIP 数据库文件路径（相对工作目录；Docker 中位于 /app/data 数据卷）。
+const GeoDBPath = "data/GeoLite2-City.mmdb"
 
 // GeoResult 地理位置结果。
 type GeoResult struct {
@@ -23,41 +24,51 @@ type GeoResult struct {
 }
 
 var (
-	geoOnce sync.Once
-	geoDB   *geoip2.Reader
+	geoMu sync.RWMutex
+	geoDB *geoip2.Reader
 )
 
-func geoDBPath() string {
-	if v := os.Getenv("GEO_DB_PATH"); v != "" {
-		return v
-	}
-	for _, c := range []string{"./data/GeoLite2-City.mmdb", "./GeoLite2-City.mmdb"} {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return ""
-}
-
-func openGeoDB() {
-	path := geoDBPath()
-	if path == "" {
-		return
-	}
+// OpenGeoDB 打开（或热重载）指定路径的 mmdb 数据库。
+// 成功后旧 Reader 被关闭替换，进行中的解析请求不受影响。
+func OpenGeoDB(path string) error {
 	r, err := geoip2.Open(path)
 	if err != nil {
-		// 数据文件损坏/版本不兼容时不阻塞服务，但要留下线索
-		log.Printf("[geo] 打开 GeoIP 数据库失败 %s: %v", path, err)
-		return
+		return err
 	}
+	geoMu.Lock()
+	old := geoDB
 	geoDB = r
+	geoMu.Unlock()
+	if old != nil {
+		old.Close()
+	}
+	return nil
+}
+
+// GeoDBLoaded mmdb 是否已加载可用。
+func GeoDBLoaded() bool {
+	geoMu.RLock()
+	defer geoMu.RUnlock()
+	return geoDB != nil
 }
 
 func isPrivate(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
-// Lookup 解析 IP 对应的地理位置。geoip2.Reader 并发安全，无需额外加锁。
+// PublicIP 是否公网地址（排除环回/私有/链路本地/组播/未指定/CGNAT）。
+func PublicIP(ip net.IP) bool {
+	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	if v4 := ip.To4(); v4 != nil && v4[0] == 100 && v4[1] >= 64 && v4[1] < 128 {
+		return false // 100.64.0.0/10 CGNAT 保留段
+	}
+	return true
+}
+
+// Lookup 解析 IP 对应的地理位置。geoip2.Reader 并发安全，读指针加锁避免热重载竞态。
 func Lookup(ipStr string) GeoResult {
 	ip := net.ParseIP(strings.TrimSpace(ipStr))
 	if ip == nil {
@@ -66,11 +77,13 @@ func Lookup(ipStr string) GeoResult {
 	if isPrivate(ip) {
 		return GeoResult{Country: "内网"}
 	}
-	geoOnce.Do(openGeoDB)
-	if geoDB == nil {
+	geoMu.RLock()
+	db := geoDB
+	geoMu.RUnlock()
+	if db == nil {
 		return GeoResult{Country: "未知"}
 	}
-	rec, err := geoDB.City(ip)
+	rec, err := db.City(ip)
 	if err != nil {
 		return GeoResult{Country: "未知"}
 	}

@@ -13,6 +13,7 @@
       <button type="button" :class="{ active: tab === 'site' }" @click="tab = 'site'">网站信息</button>
       <button type="button" :class="{ active: tab === 'smtp' }" @click="tab = 'smtp'">SMTP 邮件</button>
       <button type="button" :class="{ active: tab === 'qq' }" @click="tab = 'qq'">QQ 登录</button>
+      <button type="button" :class="{ active: tab === 'geo' }" @click="openGeo">访问地图</button>
     </div>
 
     <!-- 用户管理 -->
@@ -157,6 +158,78 @@
       </form>
       <p class="note qq-note">{{ qqConfigured ? 'QQ 登录已启用，登录页将显示「使用 QQ 登录」按钮。' : '配置 App ID / App Key 后，登录页将出现 QQ 登录入口。' }}</p>
     </section>
+
+    <!-- 访问地图（GeoIP） -->
+    <section v-if="tab === 'geo'" class="panel narrow">
+      <p class="eyebrow">访问地图 · GeoIP</p>
+      <h2>IP 地理数据库</h2>
+      <p class="desc">
+        启用后服务会自动下载 MaxMind GeoLite2-City 数据库并每小时检查更新，用于访问统计的国家/省份解析。
+        下载源<strong>无需手动填写</strong>：系统自动在候选源之间探测，用第一个可用的源下载，某个源中断会自动切换下一个；
+        候选源为「社区镜像（每日更新，无需注册）」与「MaxMind 官方（需 License Key）」。
+      </p>
+      <form @submit.prevent="saveGeo">
+        <label class="switch-field">
+          <input v-model="geoForm.geoip_enabled" type="checkbox" />
+          <span>启用自动下载与每小时更新</span>
+        </label>
+        <label class="field">
+          <span>MaxMind License Key <em class="opt">{{ geoKeySet ? '（已设置，留空保持不变）' : '' }}</em></span>
+          <input v-model="geoForm.geoip_license_key" type="password" autocomplete="new-password" placeholder="使用 MaxMind 官方源时必填；社区镜像留空" />
+        </label>
+        <label class="field">
+          <span>手动指定下载地址 <em class="opt">（高级，留空 = 自动选择可用源）</em></span>
+          <input v-model="geoForm.geoip_url" type="text" autocomplete="off" placeholder="留空自动选择；也可强制指定 .mmdb 或 tar.gz 直链" />
+        </label>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit" :disabled="savingGeo">{{ savingGeo ? '保存中…' : '保存配置' }}</button>
+          <button class="btn btn-ghost" type="button" :disabled="geoStatus.downloading" @click="triggerGeoUpdate">
+            {{ geoStatus.downloading ? '更新中…' : '立即检查更新' }}
+          </button>
+        </div>
+      </form>
+
+      <div class="test-box">
+        <p class="eyebrow">真实访客 IP · Client IP</p>
+        <p class="desc" style="margin-top: 12px">
+          决定跳转统计中如何获取访客真实 IP。直连地址指与服务器直接通信的地址（反代/容器场景为代理地址）。
+        </p>
+        <form @submit.prevent="saveIPMode">
+          <label class="field">
+            <span>识别模式</span>
+            <select v-model="ipForm.client_ip_mode" class="select" style="height: 38px">
+              <option value="smart">智能（推荐）— 部署在反代/容器后自动读取转发头，裸机直连时防伪造</option>
+              <option value="always">始终读转发头 — Cloudflare 等回源 IP 为公网的场景（可被伪造）</option>
+              <option value="direct">仅直连地址 — 完全不读转发头</option>
+              <option value="cidr">可信代理段 — 直连地址命中下方代理段时才读转发头</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>可信代理段 <em class="opt">（仅 cidr 模式使用，CIDR 或单 IP，逗号分隔）</em></span>
+            <input v-model="ipForm.client_ip_trusted_proxies" type="text" autocomplete="off" placeholder="如 173.245.48.0/20, 10.0.0.5" />
+          </label>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit" :disabled="savingIP">{{ savingIP ? '保存中…' : '保存 IP 识别设置' }}</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="test-box">
+        <p class="eyebrow">状态 · Status</p>
+        <p v-if="loadingGeoStatus" class="state-note">加载中…</p>
+        <dl v-else class="geo-status">
+          <div><dt>数据库</dt><dd :class="geoStatus.loaded ? 'ok-text' : ''">{{ geoStatus.loaded ? '已加载' : '未加载' }}</dd></div>
+          <div><dt>下载模式</dt><dd>{{ geoStatus.auto_source ? '自动选择可用源' : '手动指定' }}</dd></div>
+          <div v-if="geoStatus.source"><dt>上次使用源</dt><dd>{{ geoStatus.source }}</dd></div>
+          <div v-if="geoStatus.file_exists"><dt>文件大小</dt><dd class="num">{{ (geoStatus.file_size / 1048576).toFixed(1) }} MB</dd></div>
+          <div v-if="geoStatus.file_exists"><dt>文件更新时间</dt><dd>{{ formatTime(geoStatus.file_mod_time) }}</dd></div>
+          <div><dt>上次检查</dt><dd>{{ geoStatus.last_check ? formatTime(geoStatus.last_check) : '—' }}</dd></div>
+          <div v-if="geoStatus.last_success"><dt>上次更新成功</dt><dd>{{ formatTime(geoStatus.last_success) }}</dd></div>
+          <div v-if="geoStatus.last_error" class="err"><dt>上次错误</dt><dd class="danger-text">{{ geoStatus.last_error }}</dd></div>
+        </dl>
+        <button class="btn btn-ghost btn-sm" type="button" @click="loadGeoStatus">刷新状态</button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -200,6 +273,17 @@ const qqKeySet = ref(false)
 const savingQQ = ref(false)
 const qqConfigured = ref(false)
 const callbackHint = ref('http://localhost:8080/api/auth/qq/callback')
+
+/* geoip */
+const geoForm = reactive({ geoip_enabled: false, geoip_url: '', geoip_license_key: '' })
+const geoKeySet = ref(false)
+const savingGeo = ref(false)
+const geoStatus = ref({})
+const loadingGeoStatus = ref(false)
+
+/* client ip */
+const ipForm = reactive({ client_ip_mode: 'smart', client_ip_trusted_proxies: '' })
+const savingIP = ref(false)
 
 const ROLE_NAMES = { super: '超级管理员', admin: '管理员', vip: 'VIP', user: '用户' }
 function roleName(r) {
@@ -259,6 +343,12 @@ async function loadSettings() {
     qqKeySet.value = res.data.qq_app_key_set === '1'
     qqConfigured.value = Boolean(qqForm.qq_app_id) && qqKeySet.value
     callbackHint.value = window.location.origin + '/api/auth/qq/callback'
+    geoForm.geoip_enabled = res.data.geoip_enabled === '1'
+    geoForm.geoip_url = res.data.geoip_url || ''
+    geoForm.geoip_license_key = ''
+    geoKeySet.value = res.data.geoip_license_key_set === '1'
+    ipForm.client_ip_mode = res.data.client_ip_mode || 'smart'
+    ipForm.client_ip_trusted_proxies = res.data.client_ip_trusted_proxies || ''
   }
 }
 
@@ -348,6 +438,62 @@ async function saveQQ() {
   }
 }
 
+/* geoip save/status */
+async function saveGeo() {
+  savingGeo.value = true
+  try {
+    const res = await api.put('/api/settings', {
+      geoip_enabled: geoForm.geoip_enabled ? '1' : '0',
+      geoip_url: geoForm.geoip_url.trim(),
+      geoip_license_key: geoForm.geoip_license_key
+    })
+    if (res.code === 0) {
+      geoForm.geoip_license_key = ''
+      geoKeySet.value = Boolean(geoForm.geoip_license_key) || geoKeySet.value
+      toast('GeoIP 配置已保存', 'ok')
+      loadGeoStatus()
+    }
+  } finally {
+    savingGeo.value = false
+  }
+}
+
+async function loadGeoStatus() {
+  loadingGeoStatus.value = true
+  try {
+    const res = await api.get('/api/settings/geoip/status')
+    if (res.code === 0) geoStatus.value = res.data
+  } finally {
+    loadingGeoStatus.value = false
+  }
+}
+
+async function triggerGeoUpdate() {
+  const res = await api.post('/api/settings/geoip/update')
+  if (res.code === 0) {
+    toast(res.msg || '已开始后台更新', 'ok')
+    setTimeout(loadGeoStatus, 1500)
+  }
+}
+
+async function saveIPMode() {
+  savingIP.value = true
+  try {
+    const res = await api.put('/api/settings', {
+      client_ip_mode: ipForm.client_ip_mode,
+      client_ip_trusted_proxies: ipForm.client_ip_trusted_proxies.trim()
+    })
+    if (res.code === 0) toast('IP 识别设置已保存', 'ok')
+  } finally {
+    savingIP.value = false
+  }
+}
+
+function openGeo() {
+  tab.value = 'geo'
+  loadGeoStatus()
+}
+
 function formatTime(v) {
   if (!v) return '—'
   return new Date(v).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
@@ -423,7 +569,15 @@ onMounted(() => {
 .inline-code { font-family: var(--font-mono); font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; word-break: break-all; }
 .qq-note { margin-top: 18px; }
 .row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 16px; }
-.actions { display: flex; }
+.actions { display: flex; gap: 12px; }
 .test-box { margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--line); }
 .test-box .token-create { display: flex; gap: 10px; margin-top: 14px; }
+
+.switch-field { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; font-size: 14px; cursor: pointer; }
+.switch-field input { width: 16px; height: 16px; accent-color: var(--ink); cursor: pointer; }
+.geo-status { display: grid; gap: 10px; margin: 16px 0 18px; }
+.geo-status > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 14px; font-size: 13.5px; }
+.geo-status dt { color: var(--ink-4); }
+.geo-status dd { min-width: 0; word-break: break-all; }
+.geo-status .err dd { color: var(--danger-ink); }
 </style>

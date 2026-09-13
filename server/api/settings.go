@@ -32,6 +32,12 @@ func (h *SettingsHandler) List(c *gin.Context) {
 	if qqSet {
 		all["qq_app_key_set"] = "1"
 	}
+	_, geoKeySet := all["geoip_license_key"]
+	all["geoip_license_key"] = "" // 不回传 License Key 明文
+	all["geoip_license_key_set"] = ""
+	if geoKeySet {
+		all["geoip_license_key_set"] = "1"
+	}
 	utils.OK(c, all)
 }
 
@@ -42,9 +48,9 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 		utils.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
-	// smtp_pass 留空表示不修改
+	// smtp_pass / geoip_license_key 留空表示不修改
 	for k, v := range body {
-		if k == "smtp_pass" && v == "" {
+		if (k == "smtp_pass" || k == "geoip_license_key") && v == "" {
 			continue
 		}
 		if err := h.Svc.Set(k, v); err != nil {
@@ -53,6 +59,20 @@ func (h *SettingsHandler) Update(c *gin.Context) {
 		}
 	}
 	utils.OKMsg(c, "设置已保存", nil)
+}
+
+// GeoIPStatus GET /api/settings/geoip/status —— GeoIP 数据库下载器状态。
+func (h *SettingsHandler) GeoIPStatus(c *gin.Context) {
+	utils.OK(c, services.GetGeoIPStatus(h.Svc.DB))
+}
+
+// GeoIPUpdate POST /api/settings/geoip/update —— 立即触发一次检查/下载（异步执行）。
+func (h *SettingsHandler) GeoIPUpdate(c *gin.Context) {
+	if err := services.TriggerGeoIPUpdate(h.Svc.DB); err != nil {
+		utils.BadRequest(c, err.Error())
+		return
+	}
+	utils.OKMsg(c, "已开始后台更新，稍后可刷新状态查看进度", nil)
 }
 
 // UploadLogo POST /api/settings/logo（multipart file 字段）

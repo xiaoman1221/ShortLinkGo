@@ -15,8 +15,9 @@ import (
 
 // LinkHandler 短链接相关接口。
 type LinkHandler struct {
-	Svc  *services.LinkService
-	Host string
+	Svc      *services.LinkService
+	Settings *services.SettingService // 真实 IP 识别模式配置
+	Host     string
 }
 
 // linkVO 返回给前端的视图对象（附带 short_url 与创建者）。
@@ -323,7 +324,9 @@ func (h *LinkHandler) Geo(c *gin.Context) {
 
 // HandleRedirect 处理短码跳转（由路由 NoRoute 兜底调用）。
 func (h *LinkHandler) HandleRedirect(c *gin.Context, code string) {
-	url, err := h.Svc.Resolve(code, c.ClientIP(), c.GetHeader("User-Agent"), c.GetHeader("Referer"))
+	mode, proxies := h.Settings.ClientIPSettings()
+	ip := resolveClientIP(c, mode, parseCIDRList(proxies))
+	url, err := h.Svc.Resolve(code, ip, c.GetHeader("User-Agent"), c.GetHeader("Referer"))
 	if err != nil {
 		c.String(http.StatusNotFound, "短链接不存在或已失效")
 		return

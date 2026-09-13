@@ -6,6 +6,7 @@ import (
 
 	"ShortLinkGo/server/api"
 	"ShortLinkGo/server/app"
+	"ShortLinkGo/server/services"
 )
 
 func main() {
@@ -15,6 +16,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
+
+	// GeoIP 数据库：启动时加载本地文件（如有），启用后每小时自动检查更新
+	services.StartGeoIPUpdater(db)
 
 	r := api.New(cfg, db)
 

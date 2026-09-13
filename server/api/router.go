@@ -23,10 +23,10 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 	}
 	r := gin.Default()
 
-	// 仅信任显式配置的代理，避免 X-Forwarded-For 被伪造污染 ClientIP/访问统计。
-	// 部署在 Nginx/CDN 之后时，请通过 TRUSTED_PROXIES 配置代理地址。
-	if err := r.SetTrustedProxies(cfg.TrustedProxies); err != nil {
-		log.Printf("[router] TRUSTED_PROXIES 配置无效，已忽略: %v", err)
+	// 真实访客 IP 由 api.resolveClientIP 按网页配置的模式探测转发头获得，
+	// 这里禁用 Gin 自身的代理信任逻辑，避免两套行为（误用 c.ClientIP 时始终取直连地址）。
+	if err := r.SetTrustedProxies(nil); err != nil {
+		log.Printf("[router] 关闭内置代理信任失败: %v", err)
 	}
 
 	authSvc := services.NewAuthService(db, cfg.JWTKey, time.Duration(cfg.JWTExpire)*time.Second)
@@ -40,7 +40,7 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 		Debug:    cfg.GinMode == "debug",
 		BaseHost: cfg.Host,
 	}
-	linkH := &LinkHandler{Svc: linkSvc, Host: cfg.Host}
+	linkH := &LinkHandler{Svc: linkSvc, Settings: settingSvc, Host: cfg.Host}
 	settingH := &SettingsHandler{Svc: settingSvc}
 	tokenH := &TokenHandler{Svc: tokenSvc}
 	userAdminH := &UserAdminHandler{Svc: authSvc}
@@ -118,6 +118,8 @@ func New(cfg *app.Config, db *gorm.DB) *gin.Engine {
 		settings.PUT("", settingH.Update)
 		settings.POST("/smtp/test", settingH.TestSMTP)
 		settings.POST("/logo", settingH.UploadLogo)
+		settings.GET("/geoip/status", settingH.GeoIPStatus)
+		settings.POST("/geoip/update", settingH.GeoIPUpdate)
 	}
 
 	// 上传文件（头像/Logo）

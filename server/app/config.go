@@ -7,30 +7,28 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
 )
 
 // Config 应用配置。
 type Config struct {
-	Port           string   // 服务监听端口
-	GinMode        string   // Gin 运行模式 debug/release/test
-	DBPath         string   // SQLite 数据库文件路径
-	JWTKey         string   // JWT 签名密钥
-	Host           string   // 站点对外地址，用于拼装短链接，如 https://s.example.com
-	JWTExpire      int64    // JWT 有效期（秒）
-	TrustedProxies []string // 可信代理 CIDR/IP（TRUSTED_PROXIES，逗号分隔）；空表示不信任任何代理头
+	Port      string // 服务监听端口
+	GinMode   string // Gin 运行模式 debug/release/test
+	DBPath    string // SQLite 数据库文件路径
+	JWTKey    string // JWT 签名密钥
+	Host      string // 站点对外地址，用于拼装短链接，如 https://s.example.com
+	JWTExpire int64  // JWT 有效期（秒）
 }
 
 // Load 从环境变量加载配置，未设置时使用默认值。
+// 仅保留数据库/密钥等关键配置；其余运行时配置一律在网页「系统管理」完成（存数据库）。
 func Load() *Config {
 	cfg := &Config{
-		Port:           getEnv("PORT", "8080"),
-		GinMode:        getEnv("GIN_MODE", "release"),
-		DBPath:         getEnv("DB_PATH", "data.db"),
-		JWTKey:         os.Getenv("JWT_KEY"),
-		Host:           getEnv("HOST", ""),
-		JWTExpire:      getEnvInt64("JWT_EXPIRE", 24*3600),
-		TrustedProxies: getEnvList("TRUSTED_PROXIES"),
+		Port:      getEnv("PORT", "8080"),
+		GinMode:   getEnv("GIN_MODE", "release"),
+		DBPath:    getEnv("DB_PATH", "data.db"),
+		JWTKey:    os.Getenv("JWT_KEY"),
+		Host:      getEnv("HOST", ""),
+		JWTExpire: getEnvInt64("JWT_EXPIRE", 24*3600),
 	}
 	if cfg.JWTKey == "" {
 		cfg.JWTKey = randomHex(32)
@@ -54,20 +52,6 @@ func getEnvInt64(key string, def int64) int64 {
 		log.Printf("[config] %s 不是有效的正整数，使用默认值 %d", key, def)
 	}
 	return def
-}
-
-func getEnvList(key string) []string {
-	v := os.Getenv(key)
-	if v == "" {
-		return nil
-	}
-	var out []string
-	for _, item := range strings.Split(v, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
-		}
-	}
-	return out
 }
 
 func randomHex(n int) string {

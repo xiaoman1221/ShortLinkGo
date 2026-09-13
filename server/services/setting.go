@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"net"
 	"strconv"
 	"strings"
 
@@ -12,16 +13,29 @@ import (
 
 // allowedSettingKeys 允许通过接口修改的系统设置键。
 var allowedSettingKeys = map[string]bool{
-	"smtp_host":  true,
-	"smtp_port":  true,
-	"smtp_user":  true,
-	"smtp_pass":  true,
-	"smtp_from":  true,
-	"site_name":  true,
-	"site_logo":  true,
-	"site_desc":  true,
-	"qq_app_id":  true,
-	"qq_app_key": true,
+	"smtp_host":                 true,
+	"smtp_port":                 true,
+	"smtp_user":                 true,
+	"smtp_pass":                 true,
+	"smtp_from":                 true,
+	"site_name":                 true,
+	"site_logo":                 true,
+	"site_desc":                 true,
+	"qq_app_id":                 true,
+	"qq_app_key":                true,
+	"geoip_enabled":             true,
+	"geoip_url":                 true,
+	"geoip_license_key":         true,
+	"client_ip_mode":            true,
+	"client_ip_trusted_proxies": true,
+}
+
+// ClientIPModes 真实 IP 识别模式（网页可切换）。
+var ClientIPModes = map[string]bool{
+	"smart":  true, // 默认：直连为私网/回环（反代后）才探测转发头
+	"always": true, // 始终探测转发头（Cloudflare 等回源 IP 为公网的场景）
+	"direct": true, // 始终使用直连地址
+	"cidr":   true, // 直连命中 client_ip_trusted_proxies 代理段才探测转发头
 }
 
 // defaultSiteName 默认站点名称。
@@ -58,6 +72,26 @@ func (s *SettingService) Set(key, value string) error {
 	if key == "smtp_port" && value != "" {
 		if n, err := strconv.Atoi(value); err != nil || n < 1 || n > 65535 {
 			return errors.New("SMTP 端口无效")
+		}
+	}
+	if key == "client_ip_mode" {
+		if !ClientIPModes[value] {
+			return errors.New("无效的 IP 识别模式，可选 smart/always/direct/cidr")
+		}
+	}
+	if key == "client_ip_trusted_proxies" && strings.TrimSpace(value) != "" {
+		for _, item := range strings.Split(value, ",") {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			cidr := item
+			if !strings.Contains(cidr, "/") {
+				cidr += "/32"
+			}
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				return errors.New("代理段格式无效: " + item + "（应为 CIDR 如 173.245.48.0/20 或单 IP）")
+			}
 		}
 	}
 	var count int64
@@ -113,4 +147,17 @@ func (s *SettingService) SMTP() (utils.SMTPConfig, error) {
 		Pass: all["smtp_pass"],
 		From: all["smtp_from"],
 	}, nil
+}
+
+// ClientIPSettings 读取真实 IP 识别配置：返回模式与可信代理段。
+func (s *SettingService) ClientIPSettings() (string, string) {
+	all, err := s.All()
+	if err != nil {
+		return "smart", ""
+	}
+	mode := all["client_ip_mode"]
+	if !ClientIPModes[mode] {
+		mode = "smart"
+	}
+	return mode, strings.TrimSpace(all["client_ip_trusted_proxies"])
 }
