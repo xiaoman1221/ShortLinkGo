@@ -110,16 +110,18 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           VERSION="${{ needs.version.outputs.version }}"
+          NAME="shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          # 直接输出到包目录，二进制名统一为 shortlinkgo(.exe)；
+          # 不能先输出再 mv 进同名目录（无 .exe 后缀时源与目录同名，mv 会失败）
+          mkdir -p "pkg/$NAME/web"
           go build -trimpath -ldflags "-s -w" \
-            -o "pkg/shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" \
+            -o "pkg/$NAME/shortlinkgo${{ matrix.ext }}" \
             ./server
 
       - name: Package (binary + web/dist + docs)
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           NAME="shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p "pkg/$NAME/web"
-          mv "pkg/shortlinkgo-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}" "pkg/$NAME/"
           cp -r web/dist "pkg/$NAME/web/dist"
           cp -r docs "pkg/$NAME/docs"
           cp .env.example README.md "pkg/$NAME/"
