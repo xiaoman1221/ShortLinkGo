@@ -229,7 +229,9 @@
           </label>
           <div class="actions">
             <button class="btn btn-primary" type="submit" :disabled="savingBF">{{ savingBF ? '保存中…' : '保存兜底配置' }}</button>
-            <button class="btn btn-ghost" type="button" :disabled="bfForm.geoip_api_enabled !== true" @click="triggerBackfill">立即回填</button>
+            <button class="btn btn-ghost" type="button" :disabled="bfForm.geoip_api_enabled !== true || geoStatus.backfill?.running" @click="triggerBackfill">
+              {{ geoStatus.backfill?.running ? '回填中…' : '立即回填' }}
+            </button>
           </div>
         </form>
         <div class="test-box">
@@ -245,6 +247,8 @@
           </p>
         </div>
         <dl v-if="geoStatus.backfill" class="geo-status" style="margin-top: 18px">
+          <div><dt>当前状态</dt><dd :class="geoStatus.backfill.running ? '' : 'ok-text'">{{ geoStatus.backfill.running ? '回填进行中…' : '空闲' }}</dd></div>
+          <div><dt>待回填 IP</dt><dd class="num">{{ geoStatus.backfill.pending_ips }}</dd></div>
           <div><dt>上次运行</dt><dd>{{ geoStatus.backfill.last_run ? formatTime(geoStatus.backfill.last_run) : '—' }}</dd></div>
           <div><dt>查询 / 回填</dt><dd class="num">{{ geoStatus.backfill.last_queried }} / {{ geoStatus.backfill.last_updated }}</dd></div>
           <div><dt>缓存条数</dt><dd class="num">{{ geoStatus.backfill.cache_count }}</dd></div>
@@ -615,13 +619,34 @@ async function triggerBackfill() {
   const res = await api.post('/api/settings/geoip/backfill')
   if (res.code === 0) {
     toast(res.msg || '已开始后台回填', 'ok')
-    setTimeout(loadGeoStatus, 1500)
+    pollBackfill()
+  }
+}
+
+// 回填期间每秒刷新状态，直到任务结束（实时反映查询/回填计数变化）
+let backfillPolling = false
+async function pollBackfill() {
+  if (backfillPolling) return
+  backfillPolling = true
+  try {
+    for (let i = 0; i < 300; i++) {
+      await new Promise((r) => setTimeout(r, 1000))
+      const res = await api.get('/api/settings/geoip/status')
+      if (res.code === 0) {
+        geoStatus.value = res.data
+        if (!res.data.backfill?.running) break
+      }
+    }
+  } finally {
+    backfillPolling = false
   }
 }
 
 function openGeo() {
   tab.value = 'geo'
-  loadGeoStatus()
+  loadGeoStatus().then(() => {
+    if (geoStatus.value.backfill?.running) pollBackfill()
+  })
 }
 
 function formatTime(v) {

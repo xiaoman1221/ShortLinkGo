@@ -56,6 +56,8 @@ var backfillState geoIPBackfillState
 type GeoIPBackfillStatus struct {
 	Enabled     bool      `json:"enabled"`
 	Provider    string    `json:"provider"`
+	Running     bool      `json:"running"`
+	PendingIPs  int64     `json:"pending_ips"`
 	LastRun     time.Time `json:"last_run"`
 	LastSuccess time.Time `json:"last_success"`
 	LastQueried int       `json:"last_queried"`
@@ -73,10 +75,10 @@ type geoAPIResult struct {
 	Lon     float64
 }
 
-// StartGeoIPBackfill 启动兜底回填协程：1 分钟后首扫，此后每 10 分钟扫描一次。
+// StartGeoIPBackfill 启动兜底回填协程：启动 15 秒后首扫，此后每 10 分钟扫描一次。
 func StartGeoIPBackfill(db *gorm.DB) {
 	go func() {
-		time.Sleep(time.Minute)
+		time.Sleep(15 * time.Second)
 		runGeoIPBackfill(db)
 		ticker := time.NewTicker(backfillScanInterval)
 		defer ticker.Stop()
@@ -105,6 +107,7 @@ func GetGeoIPBackfillStatus(db *gorm.DB) GeoIPBackfillStatus {
 	st := GeoIPBackfillStatus{
 		Enabled:     all["geoip_api_enabled"] == "1",
 		Provider:    all["geoip_api_provider"],
+		Running:     backfillState.running,
 		LastRun:     backfillState.lastRun,
 		LastSuccess: backfillState.lastSuccess,
 		LastQueried: backfillState.lastQueried,
@@ -116,6 +119,8 @@ func GetGeoIPBackfillStatus(db *gorm.DB) GeoIPBackfillStatus {
 		st.Provider = "ip-api"
 	}
 	db.Model(&IpGeoCache{}).Count(&st.CacheCount)
+	db.Model(&VisitLog{}).Where("country IN ?", []string{"未知", ""}).
+		Distinct("ip").Count(&st.PendingIPs)
 	return st
 }
 
@@ -156,27 +161,31 @@ func runGeoIPBackfill(db *gorm.DB) {
 	}
 	if len(ips) == 0 {
 		clearBackfillError()
+		log.Printf("[geoip-api] 扫描完成：当前没有待回填的未识别 IP")
 		return
 	}
 
 	var toQuery []string
+	cachedHits, updatedRows := 0, 0
 	for _, ip := range ips {
 		ip = strings.TrimSpace(ip)
 		parsed := net.ParseIP(ip)
 		if parsed == nil {
 			// 非法字符串（多为伪造头），标记后不再重复扫描
 			markVisitLogs(db, ip, "无效", "", 0, 0)
+			updatedRows++
 			continue
 		}
 		if !utils.PublicIP(parsed) {
-			markVisitLogs(db, ip, "内网", "", 0, 0)
+			updatedRows += int(markVisitLogs(db, ip, "内网", "", 0, 0))
 			continue
 		}
-		// 缓存命中直接回填，不消耗配额
+		// 缓存命中直接回填，不消耗 API 配额
 		var c IpGeoCache
 		if err := db.First(&c, "ip = ?", ip).Error; err == nil {
 			if c.Country != "" {
-				applyVisitLogGeo(db, ip, c.Country, c.Region, c.City, c.Lat, c.Lon)
+				updatedRows += int(applyVisitLogGeo(db, ip, c.Country, c.Region, c.City, c.Lat, c.Lon))
+				cachedHits++
 				continue
 			}
 			// country 为空的缓存 = 上次查询失败的记录，允许重试
@@ -218,10 +227,11 @@ func runGeoIPBackfill(db *gorm.DB) {
 		}
 	}
 
+	// API 查询每个 IP 至少回填 1 行；缓存命中/标记的回填行数单独累加
 	backfillState.mu.Lock()
-	backfillState.lastQueried = queried
-	backfillState.lastUpdated = updated
-	if queried > 0 {
+	backfillState.lastQueried = queried + cachedHits
+	backfillState.lastUpdated = updated + int(updatedRows)
+	if queried+cachedHits > 0 {
 		backfillState.lastSuccess = time.Now()
 	}
 	if len(toQuery) > 0 && queried == 0 {
@@ -230,7 +240,8 @@ func runGeoIPBackfill(db *gorm.DB) {
 		backfillState.lastError = ""
 	}
 	backfillState.mu.Unlock()
-	log.Printf("[geoip-api] 回填完成：候选 %d，查询 %d，回填 %d 行", len(toQuery), queried, updated)
+	log.Printf("[geoip-api] 回填完成：候选 %d，API 查询 %d，缓存命中 %d，回填 %d 行",
+		len(toQuery), queried, cachedHits, updated+int(updatedRows))
 }
 
 func setBackfillError(db *gorm.DB, msg string) {
@@ -257,20 +268,22 @@ func saveGeoIPResult(db *gorm.DB, ip string, r geoAPIResult, source string) {
 	}
 }
 
-// applyVisitLogGeo 回填该 IP 全部未识别访问记录的地理信息。
-func applyVisitLogGeo(db *gorm.DB, ip, country, region, city string, lat, lon float64) {
-	db.Model(&VisitLog{}).
+// applyVisitLogGeo 回填该 IP 全部未识别访问记录的地理信息，返回影响行数。
+func applyVisitLogGeo(db *gorm.DB, ip, country, region, city string, lat, lon float64) int64 {
+	res := db.Model(&VisitLog{}).
 		Where("ip = ? AND country IN ?", ip, []string{"未知", ""}).
 		Updates(map[string]interface{}{
 			"country": country, "region": region, "city": city, "lat": lat, "lon": lon,
 		})
+	return res.RowsAffected
 }
 
-// markVisitLogs 将无法通过公共 API 查询的 IP（非法串/私网）标记为固定分类。
-func markVisitLogs(db *gorm.DB, ip, country, region string, lat, lon float64) {
-	db.Model(&VisitLog{}).
+// markVisitLogs 将无法通过公共 API 查询的 IP（非法串/私网）标记为固定分类，返回影响行数。
+func markVisitLogs(db *gorm.DB, ip, country, region string, lat, lon float64) int64 {
+	res := db.Model(&VisitLog{}).
 		Where("ip = ? AND country IN ?", ip, []string{"未知", ""}).
 		Updates(map[string]interface{}{"country": country, "region": region, "lat": lat, "lon": lon})
+	return res.RowsAffected
 }
 
 var geoHTTPClient = &http.Client{
