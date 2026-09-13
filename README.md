@@ -1,4 +1,19 @@
-# ShortLinkGo
+# 🔗 ShortLinkGo
+
+<div align="center">
+
+**短链接服务 · Self-hosted** — 使用 Go + Vue 编写，单二进制 + SQLite 即可运行
+
+[![Release](https://img.shields.io/github/v/release/xiaoman1221/ShortLinkGo?sort=semver&label=%E7%89%88%E6%9C%AC&color=18181b)](https://github.com/xiaoman1221/ShortLinkGo/releases/latest)
+[![Build](https://github.com/xiaoman1221/ShortLinkGo/actions/workflows/release.yml/badge.svg?label=%E6%9E%84%E5%BB%BA)](https://github.com/xiaoman1221/ShortLinkGo/actions/workflows/release.yml)
+[![Docker](https://img.shields.io/docker/v/xiaoman1221/shortlinkgo?sort=semver&label=Docker&color=2496ED&logo=docker&logoColor=white)](https://hub.docker.com/r/xiaoman1221/shortlinkgo)
+![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-嵌入式-003B57?logo=sqlite&logoColor=white)
+
+</div>
+
+---
 
 短链接服务 - 使用 Go 语言编写的短链接系统。
 
@@ -39,6 +54,18 @@ docker compose up -d --build
 ```
 
 访问 http://localhost:8080
+
+#### 使用已发布的镜像
+
+每个 `vX.Y.Z` 版本会自动构建多架构镜像（amd64/arm64）发布到 Docker Hub，tag 包含 `latest` 与对应版本号：
+
+```bash
+docker run -d -p 8080:8080 -v shortlinkgo-data:/app/data \
+  -e JWT_KEY=请替换为高强度随机字符串 \
+  xiaoman1221/shortlinkgo:latest
+```
+
+也可以从 [Releases](https://github.com/xiaoman1221/ShortLinkGo/releases) 下载对应平台的二进制压缩包（已包含前端资源与文档），解压后直接运行。
 
 > 数据默认保存在 Docker 命名卷 `shortlinkgo-data`（挂载到容器 `/app/data`）中。
 > 建议在部署前设置环境变量 `JWT_KEY`（持久化随机密钥）与 `HOST`（站点对外地址，
